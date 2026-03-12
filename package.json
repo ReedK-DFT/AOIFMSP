@@ -9,10 +9,12 @@
     "apps/web"
   ],
   "scripts": {
+    "dev": "npm run dev:web",
+    "dev:web": "npm run dev -w @aoifmsp/web",
+    "dev:functions": "npm run dev -w @aoifmsp/functions",
     "typecheck": "tsc -p tsconfig.json --noEmit && npm run typecheck -w @aoifmsp/functions && npm run typecheck -w @aoifmsp/web",
     "build": "npm run build -w @aoifmsp/web && npm run build -w @aoifmsp/functions",
-    "dev:web": "npm run dev -w @aoifmsp/web",
-    "dev:functions": "npm run dev -w @aoifmsp/functions"
+    "package:functions": "node ./scripts/prepare-function-package.mjs"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
@@ -24,6 +26,7 @@
     "@azure/keyvault-secrets": "^4.10.0",
     "@azure/storage-blob": "^12.31.0",
     "@azure/storage-queue": "^12.29.0",
+    "yaml": "^2.8.2",
     "zod": "^4.3.6"
   }
 }

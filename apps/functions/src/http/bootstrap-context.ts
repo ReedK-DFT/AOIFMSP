@@ -23,6 +23,29 @@ const defaultWorkflowRecommendations = [
   },
 ];
 
+function readBranding() {
+  const mspName = process.env.AOIFMSP_BRAND_MSP_NAME?.trim() || 'Contoso MSP';
+  const abbreviation = process.env.AOIFMSP_BRAND_MSP_ABBREVIATION?.trim() || 'AOI';
+
+  return {
+    mspName,
+    abbreviation,
+    colors: {
+      primary: process.env.AOIFMSP_BRAND_PRIMARY_COLOR?.trim() || '#10634a',
+      secondary: process.env.AOIFMSP_BRAND_SECONDARY_COLOR?.trim() || '#ff8a3d',
+      surface: process.env.AOIFMSP_BRAND_SURFACE_COLOR?.trim() || '#f4efe7',
+    },
+    logos: {
+      ...(process.env.AOIFMSP_BRAND_LOGO_MARK_URL?.trim()
+        ? { markUrl: process.env.AOIFMSP_BRAND_LOGO_MARK_URL.trim() }
+        : {}),
+      ...(process.env.AOIFMSP_BRAND_LOGO_WORDMARK_URL?.trim()
+        ? { wordmarkUrl: process.env.AOIFMSP_BRAND_LOGO_WORDMARK_URL.trim() }
+        : {}),
+    },
+  };
+}
+
 export async function bootstrapContext(request: HttpRequest, context: InvocationContext) {
   logRequest(context, request);
 
@@ -35,6 +58,7 @@ export async function bootstrapContext(request: HttpRequest, context: Invocation
       name: 'AOIFMSP',
       tagline: 'Automation of Integrations for Managed Service Providers',
     },
+    branding: readBranding(),
     navigation: [
       {
         id: 'technician-workspace',
@@ -61,7 +85,7 @@ export async function bootstrapContext(request: HttpRequest, context: Invocation
     featureExposureModes: ['guided', 'standard', 'advanced'],
     inputModel: {
       profileSupport: true,
-      surfaces: ['global', 'workflow-designer', 'tenant-admin', 'technician-workspace'],
+      surfaces: ['global', 'workflow-designer', 'tenant-admin', 'technician-workspace', 'connectors'],
     },
   });
 }

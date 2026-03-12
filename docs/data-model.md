@@ -236,6 +236,39 @@ Notes:
 - `surfaceScope` can be `global`, `workflow-designer`, `tenant-admin`, or similar.
 - `bindingMapJson` should store action-to-input mappings, not raw component-level event wiring.
 
+## Table: DirectoryBootstrapState
+
+Purpose: record Microsoft Entra bootstrap state for the MSP tenant, including the AOIFMSP Admins group and the initial deployment administrator.
+
+Partition strategy:
+
+- PartitionKey = MSP#{mspTenantId}
+- RowKey = DIRBOOT#primary
+
+Fields:
+
+- id
+- mspTenantId
+- scope
+- adminGroupDisplayName
+- adminGroupMailNickname
+- adminGroupObjectId
+- bootstrapStatus
+- initialAdminUserObjectId
+- initialAdminUserPrincipalName
+- lastVerifiedAt
+- notesJson
+- createdAt
+- createdBy
+- updatedAt
+- updatedBy
+
+Notes:
+
+- This record tracks the Entra-side deployment bootstrap that creates AOIFMSP Admins.
+- The deployment workflow should populate or verify this state when the admin group bootstrap succeeds.
+- App-role and group-to-role seeding can build on this record later.
+
 ## Table: `ClientTenants`
 
 Purpose: client tenant registry under an MSP.
@@ -921,6 +954,119 @@ Notes:
 - `scopeType` should be `msp` or `client`.
 - `secretRef` points to Key Vault.
 - Graph connections for client tenants are just specialized rows in this table.
+
+## Table: PlatformActionCatalog
+
+Purpose: curated normalized platform actions that sit between raw connector actions and user-facing AOIFMSP functionality.
+
+Partition strategy:
+
+- PartitionKey = MSP#{mspTenantId}
+- RowKey = PACTION#{normalizedActionId}
+
+Fields:
+
+- id
+- mspTenantId
+- normalizedActionId
+- canonicalActionKey
+- displayName
+- objectType
+- verb
+- capabilityDomain
+- lifecycle
+- visibility
+- authoritativeToolType
+- overlapStrategy
+- inputContractJson
+- outputContractJson
+- summary
+- schemaVersion
+- managementMode
+- createdAt
+- createdBy
+- updatedAt
+- updatedBy
+
+Notes:
+
+- This is the normalized catalog that should drive workflow blocks, direct admin UX, and AI-assisted action suggestions.
+- AOIFMSP should prefer normalized actions over raw imported operations in user-facing surfaces.
+- authoritativeToolType captures the default tool owner for the domain, such as PSA for tickets or RMM for devices.
+
+## Table: ConnectorActionMappings
+
+Purpose: map raw imported connector actions to normalized platform actions with overlap-aware disposition.
+
+Partition strategy:
+
+- PartitionKey = MSP#{mspTenantId}|PACTION#{normalizedActionId}
+- RowKey = MAP#{connectorId}#{connectorVersionId}#{actionId}
+
+Fields:
+
+- id
+- mspTenantId
+- normalizedActionId
+- connectorId
+- connectorVersionId
+- actionId
+- toolType
+- disposition
+- mappingConfidence
+- isEnabledByDefault
+- featureCoverageJson
+- gapNotes
+- conflictNotes
+- reviewNotes
+- createdAt
+- createdBy
+- updatedAt
+- updatedBy
+
+Notes:
+
+- disposition should be one of authoritative, augmenting, fallback, redundant, or disabled.
+- This is the mechanism that prevents AOIFMSP from duplicating already-working PSA, RMM, or documentation behavior unless the MSP explicitly wants that overlap.
+
+## Table: ToolCapabilityProfiles
+
+Purpose: onboarding and governance profile for how an MSP actually uses each core platform tool.
+
+Partition strategy:
+
+- PartitionKey = MSP#{mspTenantId}
+- RowKey = TOOLPROFILE#{profileId}
+
+Fields:
+
+- id
+- mspTenantId
+- profileId
+- displayName
+- toolType
+- connectorId
+- connectionId
+- roleInStack
+- coveredDomainsJson
+- overlapPolicyJson
+- observedCapabilitiesJson
+- gapsJson
+- onboardingReviewStatus
+- lastReviewedAt
+- reviewedBy
+- schemaVersion
+- managementMode
+- createdAt
+- createdBy
+- updatedAt
+- updatedBy
+
+Notes:
+
+- This table captures whether a tool is authoritative, supporting, legacy, or still under review for a given MSP.
+- The normalization pipeline should consult this profile before enabling imported actions by default.
+- This is where AOIFMSP can recognize that an MSP already has a strong PSA or RMM integration in place and avoid stepping on it.
 
 ## Table: `Workflows`
 
@@ -1784,6 +1930,7 @@ After this document, the next useful assets are:
 3. Validation schemas for workflow drafts, workflow versions, AI agent nodes, queue messages, UI action maps, and security-sensitive configuration objects.
 4. Example seed data for one MSP, one client tenant, one tenant-management profile, one managed user set, one tenant group, one standards template, one alert, one ticket, one device, one documentation record, one connector, one connection, one agent, and one workflow.
 5. A policy pack or checklist that validates `docs/security-baseline.md` for each environment before deployment.
+6. Normalized platform action seeding and connector-to-platform mapping examples for core PSA, RMM, documentation, and Graph domains.
 
 
 

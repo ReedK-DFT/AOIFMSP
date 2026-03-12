@@ -4,6 +4,7 @@ import {
   type DataLayerService,
   type WorkflowDocument,
 } from '../../../../src/index.js';
+import { seedIntegrationDemoData } from './demo-seed-integrations.js';
 
 const demoTimestamp = '2026-03-12T14:00:00.000Z';
 const recentTimestamp = '2026-03-12T15:25:00.000Z';
@@ -42,6 +43,7 @@ async function seedData(service: DataLayerService): Promise<DataLayerService> {
   const existingTenant = await service.tables.mspTenants.getByKey(demoContext.mspTenantId);
 
   if (existingTenant) {
+    await seedIntegrationDemoData(service);
     return service;
   }
 
@@ -585,6 +587,8 @@ async function seedData(service: DataLayerService): Promise<DataLayerService> {
     ),
   ]);
 
+  await seedIntegrationDemoData(service);
+
   return service;
 }
 
@@ -877,3 +881,4 @@ function buildStandardsDriftWorkflow(workflowId: string): WorkflowDocument {
     },
   };
 }
+

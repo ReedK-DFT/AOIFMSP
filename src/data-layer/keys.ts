@@ -97,6 +97,7 @@ export const keyBuilders = {
     clientTenant: (mspTenantId: string, clientTenantId: string) => address(`MSP#${mspTenantId}`, `CLIENT#${clientTenantId}`),
     clientAppRegistration: (mspTenantId: string, clientTenantId: string, appRegistrationId: string) => address(joinKeySegments(`MSP#${mspTenantId}`, `CLIENT#${clientTenantId}`), `APPREG#${appRegistrationId}`),
     foundryProject: (mspTenantId: string, environmentName: string) => address(`MSP#${mspTenantId}`, `FOUNDRY#${environmentName}`),
+    directoryBootstrapState: (mspTenantId: string, scope: string) => address(`MSP#${mspTenantId}`, `DIRBOOT#${scope}`),
     tenantManagementProfile: (mspTenantId: string, clientTenantId: string) => address(`MSP#${mspTenantId}`, `MGMT#${clientTenantId}`),
     managedUser: (mspTenantId: string, clientTenantId: string, managedUserId: string) => address(joinKeySegments(`MSP#${mspTenantId}`, `CLIENT#${clientTenantId}`), `USER#${managedUserId}`),
     ticket: (mspTenantId: string, ticketId: string) => address(`MSP#${mspTenantId}`, `TICKET#${ticketId}`),
@@ -111,6 +112,9 @@ export const keyBuilders = {
     managementAlert: (mspTenantId: string, alertId: string, at: Date | string | number = new Date()) => address(`MSP#${mspTenantId}`, `ALERT#${reverseTicks(at)}#${alertId}`),
     managementSyncState: (mspTenantId: string, clientTenantId: string, datasetName: string) => address(joinKeySegments(`MSP#${mspTenantId}`, `CLIENT#${clientTenantId}`), `SYNC#${datasetName}`),
     connector: (mspTenantId: string, connectorId: string) => address(`MSP#${mspTenantId}`, `CONNECTOR#${connectorId}`),
+    platformActionCatalog: (mspTenantId: string, normalizedActionId: string) => address(`MSP#${mspTenantId}`, `PACTION#${normalizedActionId}`),
+    connectorActionMapping: (mspTenantId: string, normalizedActionId: string, connectorId: string, connectorVersionId: string, actionId: string) => address(joinKeySegments(`MSP#${mspTenantId}`, `PACTION#${normalizedActionId}`), `MAP#${connectorId}#${connectorVersionId}#${actionId}`),
+    toolCapabilityProfile: (mspTenantId: string, profileId: string) => address(`MSP#${mspTenantId}`, `TOOLPROFILE#${profileId}`),
     connectorVersion: (mspTenantId: string, connectorId: string, connectorVersionId: string) => address(joinKeySegments(`MSP#${mspTenantId}`, `CONNECTOR#${connectorId}`), `VER#${connectorVersionId}`),
     connectorAction: (mspTenantId: string, connectorId: string, connectorVersionId: string, actionId: string) => address(joinKeySegments(`MSP#${mspTenantId}`, `CONNECTOR#${connectorId}`, `VER#${connectorVersionId}`), `ACTION#${actionId}`),
     aiAgent: (mspTenantId: string, agentId: string) => address(`MSP#${mspTenantId}`, `AGENT#${agentId}`),
@@ -179,4 +183,5 @@ export const storageNaming = {
   joinPathSegments,
   padded,
 };
+
 

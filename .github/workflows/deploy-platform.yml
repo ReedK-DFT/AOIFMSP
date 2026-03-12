@@ -16,7 +16,7 @@ on:
       environment_name:
         description: Environment label such as dev, test, or prod
         required: true
-        default: prod
+        default: test
       storage_public_network_access:
         description: Storage public network access
         required: true
@@ -41,6 +41,42 @@ on:
         options:
           - Enabled
           - Disabled
+      bootstrap_admin_user_principal_name:
+        description: Microsoft Entra UPN for the initial AOIFMSP admin to add to the AOIFMSP Admins group. Required unless object id is provided
+        required: false
+        default: ''
+      bootstrap_admin_object_id:
+        description: Microsoft Entra object id for the initial AOIFMSP admin if UPN lookup is not desired
+        required: false
+        default: ''
+      msp_name:
+        description: MSP display name used in the AOIFMSP shell
+        required: true
+        default: Contoso MSP
+      msp_abbreviation:
+        description: Short abbreviation used for compact branding fallback
+        required: true
+        default: AOI
+      brand_primary_color:
+        description: Primary brand color in hex format
+        required: true
+        default: '#10634a'
+      brand_secondary_color:
+        description: Secondary brand color in hex format
+        required: true
+        default: '#ff8a3d'
+      brand_surface_color:
+        description: Base shell surface color in hex format
+        required: true
+        default: '#f4efe7'
+      brand_logo_mark_path:
+        description: Optional repo-relative path to a square logo mark image
+        required: false
+        default: ''
+      brand_logo_wordmark_path:
+        description: Optional repo-relative path to a horizontal wordmark image
+        required: false
+        default: ''
 
 permissions:
   id-token: write
@@ -55,12 +91,62 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build Functions App
+        run: npm run build -w @aoifmsp/functions
+
+      - name: Prepare Functions Publish Package
+        run: |
+          npm run package:functions
+          npm install --omit=dev --prefix .publish/functions
+
       - name: Azure Login
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Ensure AOIFMSP Admins Group
+        id: entra_bootstrap
+        shell: bash
+        env:
+          AOIFMSP_BOOTSTRAP_ADMIN_UPN: ${{ inputs.bootstrap_admin_user_principal_name }}
+          AOIFMSP_BOOTSTRAP_ADMIN_OBJECT_ID: ${{ inputs.bootstrap_admin_object_id }}
+        run: |
+          node scripts/ensure-entra-admin-group.mjs | tee entra-bootstrap.json
+
+          GROUP_OBJECT_ID=$(jq -r '.groupObjectId' entra-bootstrap.json)
+          BOOTSTRAP_ADMIN_UPN=$(jq -r '.bootstrapAdminUserPrincipalName // empty' entra-bootstrap.json)
+
+          echo "group_object_id=$GROUP_OBJECT_ID" >> "$GITHUB_OUTPUT"
+          echo "bootstrap_admin_upn=$BOOTSTRAP_ADMIN_UPN" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve Deployment Principal Object Id
+        id: principal
+        shell: bash
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_PRINCIPAL_OBJECT_ID: ${{ secrets.AZURE_PRINCIPAL_OBJECT_ID }}
+        run: |
+          PRINCIPAL_OBJECT_ID="$AZURE_PRINCIPAL_OBJECT_ID"
+
+          if [ -z "$PRINCIPAL_OBJECT_ID" ]; then
+            PRINCIPAL_OBJECT_ID=$(az ad sp show --id "$AZURE_CLIENT_ID" --query id --output tsv 2>/dev/null || true)
+          fi
+
+          echo "principal_object_id=$PRINCIPAL_OBJECT_ID" >> "$GITHUB_OUTPUT"
 
       - name: Deploy AOIFMSP Platform Foundation
         uses: azure/cli@v2
@@ -75,10 +161,160 @@ jobs:
                 resourceGroupName="${{ inputs.resource_group_name }}" \
                 namePrefix="${{ inputs.name_prefix }}" \
                 environmentName="${{ inputs.environment_name }}" \
+                deploymentPrincipalObjectId="${{ steps.principal.outputs.principal_object_id }}" \
                 storagePublicNetworkAccess="${{ inputs.storage_public_network_access }}" \
                 keyVaultPublicNetworkAccess="${{ inputs.key_vault_public_network_access }}" \
                 appServicePublicNetworkAccess="${{ inputs.app_service_public_network_access }}" \
               --query properties.outputs \
               --output json > deployment-outputs.json
-            echo '## Deployment Outputs' >> "$GITHUB_STEP_SUMMARY"
-            cat deployment-outputs.json >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enable Static Website And Capture Outputs
+        id: outputs
+        shell: bash
+        run: |
+          FUNCTION_APP_NAME=$(jq -r '.functionAppName.value' deployment-outputs.json)
+          FUNCTION_APP_URL=$(jq -r '.functionAppUrl.value' deployment-outputs.json)
+          RESOURCE_GROUP_NAME=$(jq -r '.platformResourceGroupName.value' deployment-outputs.json)
+          STORAGE_ACCOUNT_NAME=$(jq -r '.storageAccountName.value' deployment-outputs.json)
+
+          az storage blob service-properties update \
+            --account-name "$STORAGE_ACCOUNT_NAME" \
+            --static-website \
+            --index-document index.html \
+            --404-document index.html \
+            --auth-mode login
+
+          STATIC_WEBSITE_URL=$(az storage account show \
+            --name "$STORAGE_ACCOUNT_NAME" \
+            --resource-group "$RESOURCE_GROUP_NAME" \
+            --query 'primaryEndpoints.web' \
+            --output tsv)
+
+          echo "function_app_name=$FUNCTION_APP_NAME" >> "$GITHUB_OUTPUT"
+          echo "function_app_url=$FUNCTION_APP_URL" >> "$GITHUB_OUTPUT"
+          echo "resource_group_name=$RESOURCE_GROUP_NAME" >> "$GITHUB_OUTPUT"
+          echo "static_website_url=$STATIC_WEBSITE_URL" >> "$GITHUB_OUTPUT"
+          echo "storage_account_name=$STORAGE_ACCOUNT_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Build Web App For Hosted Functions Backend
+        shell: bash
+        env:
+          VITE_AOIFMSP_API_MODE: functions
+          VITE_AOIFMSP_API_BASE_URL: ${{ steps.outputs.outputs.function_app_url }}
+        run: npm run build -w @aoifmsp/web
+
+      - name: Deploy Functions Package
+        uses: Azure/functions-action@v1
+        with:
+          app-name: ${{ steps.outputs.outputs.function_app_name }}
+          package: .publish/functions
+
+      - name: Publish Static Frontend
+        shell: bash
+        run: |
+          az storage blob delete-batch \
+            --account-name "${{ steps.outputs.outputs.storage_account_name }}" \
+            --source '$web' \
+            --auth-mode login \
+            --pattern '*' || true
+
+          az storage blob upload-batch \
+            --account-name "${{ steps.outputs.outputs.storage_account_name }}" \
+            --destination '$web' \
+            --source apps/web/dist \
+            --overwrite true \
+            --auth-mode login
+
+      - name: Publish Branding Assets And Apply Branding Settings
+        id: branding
+        shell: bash
+        env:
+          AOIFMSP_BRAND_MSP_NAME: ${{ inputs.msp_name }}
+          AOIFMSP_BRAND_MSP_ABBREVIATION: ${{ inputs.msp_abbreviation }}
+          AOIFMSP_BRAND_PRIMARY_COLOR: ${{ inputs.brand_primary_color }}
+          AOIFMSP_BRAND_SECONDARY_COLOR: ${{ inputs.brand_secondary_color }}
+          AOIFMSP_BRAND_SURFACE_COLOR: ${{ inputs.brand_surface_color }}
+          BRAND_LOGO_MARK_PATH: ${{ inputs.brand_logo_mark_path }}
+          BRAND_LOGO_WORDMARK_PATH: ${{ inputs.brand_logo_wordmark_path }}
+        run: |
+          STATIC_WEBSITE_URL="${{ steps.outputs.outputs.static_website_url }}"
+          STATIC_WEBSITE_URL="${STATIC_WEBSITE_URL%/}"
+          MARK_URL=""
+          WORDMARK_URL=""
+
+          if [ -n "$BRAND_LOGO_MARK_PATH" ]; then
+            if [ ! -f "$BRAND_LOGO_MARK_PATH" ]; then
+              echo "Brand logo mark file not found: $BRAND_LOGO_MARK_PATH" >&2
+              exit 1
+            fi
+
+            MARK_FILE_NAME=$(basename "$BRAND_LOGO_MARK_PATH")
+            az storage blob upload \
+              --account-name "${{ steps.outputs.outputs.storage_account_name }}" \
+              --container-name '$web' \
+              --name "branding/$MARK_FILE_NAME" \
+              --file "$BRAND_LOGO_MARK_PATH" \
+              --overwrite true \
+              --auth-mode login
+            MARK_URL="$STATIC_WEBSITE_URL/branding/$MARK_FILE_NAME"
+          fi
+
+          if [ -n "$BRAND_LOGO_WORDMARK_PATH" ]; then
+            if [ ! -f "$BRAND_LOGO_WORDMARK_PATH" ]; then
+              echo "Brand logo wordmark file not found: $BRAND_LOGO_WORDMARK_PATH" >&2
+              exit 1
+            fi
+
+            WORDMARK_FILE_NAME=$(basename "$BRAND_LOGO_WORDMARK_PATH")
+            az storage blob upload \
+              --account-name "${{ steps.outputs.outputs.storage_account_name }}" \
+              --container-name '$web' \
+              --name "branding/$WORDMARK_FILE_NAME" \
+              --file "$BRAND_LOGO_WORDMARK_PATH" \
+              --overwrite true \
+              --auth-mode login
+            WORDMARK_URL="$STATIC_WEBSITE_URL/branding/$WORDMARK_FILE_NAME"
+          fi
+
+          az functionapp config appsettings set \
+            --resource-group "${{ steps.outputs.outputs.resource_group_name }}" \
+            --name "${{ steps.outputs.outputs.function_app_name }}" \
+            --settings \
+              "AOIFMSP_BRAND_MSP_NAME=$AOIFMSP_BRAND_MSP_NAME" \
+              "AOIFMSP_BRAND_MSP_ABBREVIATION=$AOIFMSP_BRAND_MSP_ABBREVIATION" \
+              "AOIFMSP_BRAND_PRIMARY_COLOR=$AOIFMSP_BRAND_PRIMARY_COLOR" \
+              "AOIFMSP_BRAND_SECONDARY_COLOR=$AOIFMSP_BRAND_SECONDARY_COLOR" \
+              "AOIFMSP_BRAND_SURFACE_COLOR=$AOIFMSP_BRAND_SURFACE_COLOR" \
+              "AOIFMSP_BRAND_LOGO_MARK_URL=$MARK_URL" \
+              "AOIFMSP_BRAND_LOGO_WORDMARK_URL=$WORDMARK_URL"
+
+          echo "mark_url=$MARK_URL" >> "$GITHUB_OUTPUT"
+          echo "wordmark_url=$WORDMARK_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Configure Function App CORS For Static Site
+        shell: bash
+        run: |
+          STATIC_WEBSITE_URL="${{ steps.outputs.outputs.static_website_url }}"
+          STATIC_WEBSITE_URL="${STATIC_WEBSITE_URL%/}"
+
+          az functionapp cors add \
+            --resource-group "${{ steps.outputs.outputs.resource_group_name }}" \
+            --name "${{ steps.outputs.outputs.function_app_name }}" \
+            --allowed-origins "$STATIC_WEBSITE_URL"
+
+      - name: Deployment Summary
+        shell: bash
+        run: |
+          echo '## Deployment Outputs' >> "$GITHUB_STEP_SUMMARY"
+          echo "- Resource group: ${{ steps.outputs.outputs.resource_group_name }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Function App: ${{ steps.outputs.outputs.function_app_name }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Function URL: ${{ steps.outputs.outputs.function_app_url }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Frontend URL: ${{ steps.outputs.outputs.static_website_url }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- AOIFMSP Admins Group Object Id: ${{ steps.entra_bootstrap.outputs.group_object_id }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Initial Admin: ${{ steps.entra_bootstrap.outputs.bootstrap_admin_upn }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- MSP Brand: ${{ inputs.msp_name }} (${{ inputs.msp_abbreviation }})" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Brand Colors: ${{ inputs.brand_primary_color }}, ${{ inputs.brand_secondary_color }}, ${{ inputs.brand_surface_color }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Logo Mark URL: ${{ steps.branding.outputs.mark_url || 'not provided' }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Logo Wordmark URL: ${{ steps.branding.outputs.wordmark_url || 'not provided' }}" >> "$GITHUB_STEP_SUMMARY"
+          echo '' >> "$GITHUB_STEP_SUMMARY"
+          echo 'The frontend was built against the live Function App URL and published to Azure Storage static website hosting.' >> "$GITHUB_STEP_SUMMARY"

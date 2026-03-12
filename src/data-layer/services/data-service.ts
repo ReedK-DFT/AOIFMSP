@@ -1,7 +1,8 @@
 import type { AIAgentEntity, AIAgentRunEntity, AIAgentVersionEntity, DesignTimeAssistantOutput } from '../ai';
+import type { ConnectorActionMappingEntity, PlatformActionCatalogEntity, ToolCapabilityProfileEntity } from '../action-catalog';
 import type { AuditEventEntity } from '../audit';
 import { blobPathBuilders, keyBuilders, secretNameBuilders } from '../keys';
-import type { ClientAppRegistrationEntity, ClientTenantEntity, FoundryProjectEntity, MspTenantEntity, MspUserEntity, UserInputProfileEntity, UserPreferencesEntity } from '../platform';
+import type { ClientAppRegistrationEntity, ClientTenantEntity, DirectoryBootstrapStateEntity, FoundryProjectEntity, MspTenantEntity, MspUserEntity, UserInputProfileEntity, UserPreferencesEntity } from '../platform';
 import type {
   ManagedUserEntity,
   ManagementAlertEntity,
@@ -60,6 +61,7 @@ export const tableNames = {
   mspUsers: 'MspUsers',
   userPreferences: 'UserPreferences',
   userInputProfiles: 'UserInputProfiles',
+  directoryBootstrapState: 'DirectoryBootstrapState',
   clientTenants: 'ClientTenants',
   clientAppRegistrations: 'ClientAppRegistrations',
   foundryProjects: 'FoundryProjects',
@@ -77,6 +79,9 @@ export const tableNames = {
   managementAlerts: 'ManagementAlerts',
   managementSyncState: 'ManagementSyncState',
   connectors: 'Connectors',
+  platformActionCatalog: 'PlatformActionCatalog',
+  connectorActionMappings: 'ConnectorActionMappings',
+  toolCapabilityProfiles: 'ToolCapabilityProfiles',
   connectorVersions: 'ConnectorVersions',
   connectorActions: 'ConnectorActions',
   aiAgents: 'AIAgents',
@@ -99,6 +104,7 @@ export interface DataLayerService {
     mspUsers: EntityTableRepository<MspUserEntity, [mspTenantId: string, userObjectId: string]>;
     userPreferences: EntityTableRepository<UserPreferencesEntity, [mspTenantId: string, userObjectId: string]>;
     userInputProfiles: EntityTableRepository<UserInputProfileEntity, [mspTenantId: string, userObjectId: string, profileId: string]>;
+    directoryBootstrapState: EntityTableRepository<DirectoryBootstrapStateEntity, [mspTenantId: string, scope: string]>;
     clientTenants: EntityTableRepository<ClientTenantEntity, [mspTenantId: string, clientTenantId: string]>;
     clientAppRegistrations: EntityTableRepository<ClientAppRegistrationEntity, [mspTenantId: string, clientTenantId: string, appRegistrationId: string]>;
     foundryProjects: EntityTableRepository<FoundryProjectEntity, [mspTenantId: string, environmentName: string]>;
@@ -116,6 +122,9 @@ export interface DataLayerService {
     managementAlerts: EntityTableRepository<ManagementAlertEntity, [mspTenantId: string, alertId: string, at?: Date | string | number]>;
     managementSyncState: EntityTableRepository<ManagementSyncStateEntity, [mspTenantId: string, clientTenantId: string, datasetName: string]>;
     connectors: EntityTableRepository<ConnectorEntity, [mspTenantId: string, connectorId: string]>;
+    platformActionCatalog: EntityTableRepository<PlatformActionCatalogEntity, [mspTenantId: string, normalizedActionId: string]>;
+    connectorActionMappings: EntityTableRepository<ConnectorActionMappingEntity, [mspTenantId: string, normalizedActionId: string, connectorId: string, connectorVersionId: string, actionId: string]>;
+    toolCapabilityProfiles: EntityTableRepository<ToolCapabilityProfileEntity, [mspTenantId: string, profileId: string]>;
     connectorVersions: EntityTableRepository<ConnectorVersionEntity, [mspTenantId: string, connectorId: string, connectorVersionId: string]>;
     connectorActions: EntityTableRepository<ConnectorActionEntity, [mspTenantId: string, connectorId: string, connectorVersionId: string, actionId: string]>;
     aiAgents: EntityTableRepository<AIAgentEntity, [mspTenantId: string, agentId: string]>;
@@ -152,6 +161,7 @@ export function createDataLayerService(dependencies: DataLayerDependencies): Dat
       mspUsers: new EntityTableRepository(dependencies.tables, tableNames.mspUsers, keyBuilders.entity.mspUser),
       userPreferences: new EntityTableRepository(dependencies.tables, tableNames.userPreferences, keyBuilders.entity.userPreferences),
       userInputProfiles: new EntityTableRepository(dependencies.tables, tableNames.userInputProfiles, keyBuilders.entity.userInputProfile),
+      directoryBootstrapState: new EntityTableRepository(dependencies.tables, tableNames.directoryBootstrapState, keyBuilders.entity.directoryBootstrapState),
       clientTenants: new EntityTableRepository(dependencies.tables, tableNames.clientTenants, keyBuilders.entity.clientTenant),
       clientAppRegistrations: new EntityTableRepository(dependencies.tables, tableNames.clientAppRegistrations, keyBuilders.entity.clientAppRegistration),
       foundryProjects: new EntityTableRepository(dependencies.tables, tableNames.foundryProjects, keyBuilders.entity.foundryProject),
@@ -169,6 +179,9 @@ export function createDataLayerService(dependencies: DataLayerDependencies): Dat
       managementAlerts: new EntityTableRepository(dependencies.tables, tableNames.managementAlerts, keyBuilders.entity.managementAlert),
       managementSyncState: new EntityTableRepository(dependencies.tables, tableNames.managementSyncState, keyBuilders.entity.managementSyncState),
       connectors: new EntityTableRepository(dependencies.tables, tableNames.connectors, keyBuilders.entity.connector),
+      platformActionCatalog: new EntityTableRepository(dependencies.tables, tableNames.platformActionCatalog, keyBuilders.entity.platformActionCatalog),
+      connectorActionMappings: new EntityTableRepository(dependencies.tables, tableNames.connectorActionMappings, keyBuilders.entity.connectorActionMapping),
+      toolCapabilityProfiles: new EntityTableRepository(dependencies.tables, tableNames.toolCapabilityProfiles, keyBuilders.entity.toolCapabilityProfile),
       connectorVersions: new EntityTableRepository(dependencies.tables, tableNames.connectorVersions, keyBuilders.entity.connectorVersion),
       connectorActions: new EntityTableRepository(dependencies.tables, tableNames.connectorActions, keyBuilders.entity.connectorAction),
       aiAgents: new EntityTableRepository(dependencies.tables, tableNames.aiAgents, keyBuilders.entity.aiAgent),
@@ -206,5 +219,6 @@ export function createInMemoryDataLayerService(): DataLayerService {
     secrets: new InMemorySecretValueStore(),
   });
 }
+
 
 

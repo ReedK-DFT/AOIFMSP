@@ -32,7 +32,7 @@ It intentionally focuses on:
 - Security-sensitive role assignments
 - GitHub Actions deployability
 
-It does not yet automate every future platform component such as protected edge ingress, private endpoints, Foundry resources, or Microsoft Entra app-role seeding.
+It does not yet automate every future platform component such as protected edge ingress, private endpoints, Foundry resources, or full Microsoft Entra app-role seeding. The GitHub deployment workflow now does include the first Entra bootstrap step for the `AOIFMSP Admins` group.
 
 ## Deployment Entry Point
 
@@ -68,4 +68,5 @@ See these workflows:
 
 ## Recommended Next Step
 
-After deploying the foundation, configure the application code deployment path so the Function App package and frontend package publish into the created resources using the same GitHub OIDC model.
+After deploying the foundation, configure the application code deployment path so the Function App package and frontend package publish into the created resources using the same GitHub OIDC model. For full clone-and-deploy onboarding, also provide a bootstrap admin UPN or object id so the workflow can create the `AOIFMSP Admins` group and add the initial administrator automatically.
+

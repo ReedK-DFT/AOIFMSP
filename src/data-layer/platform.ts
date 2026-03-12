@@ -128,7 +128,22 @@ export interface FoundryProjectEntity extends TableEntityAddress, TableSystemFie
   searchResourceId?: string;
 }
 
+
+export interface DirectoryBootstrapStateEntity extends TableEntityAddress, TableSystemFields, AuditedEntity {
+  id: string;
+  mspTenantId: string;
+  scope: 'primary';
+  adminGroupDisplayName: string;
+  adminGroupMailNickname: string;
+  adminGroupObjectId?: GuidString;
+  bootstrapStatus: 'pending' | 'seeded' | 'verified' | 'error';
+  initialAdminUserObjectId?: GuidString;
+  initialAdminUserPrincipalName?: string;
+  lastVerifiedAt?: string;
+  notesJson?: string;
+}
 export interface LayoutPreferencesDocument extends JsonObject {
   panels?: Record<string, { collapsed?: boolean; width?: number; height?: number }>;
   surfaces?: Record<string, JsonObject>;
 }
+

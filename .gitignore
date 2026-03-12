@@ -1,1 +1,15 @@
 node_modules
+.publish
+apps/functions/local.settings.json
+apps/functions/dist
+apps/web/dist
+src/**/*.js
+src/**/*.d.ts
+src/**/*.d.ts.map
+
+.azure-cli/
+# Local tooling and editor state
+.vscode/
+
+# Generated infrastructure output
+infra/azure/platform/*.json

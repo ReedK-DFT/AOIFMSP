@@ -1,4 +1,9 @@
+import { useMemo, useState } from 'react';
+
 import type {
+  ConnectorCatalogResponse,
+  ConnectorDetailResponse,
+  ConnectorImportPreview,
   NavigationItem,
   SessionResponse,
   TechnicianHomeResponse,
@@ -7,33 +12,448 @@ import type {
   WorkflowListItem,
   WorkflowRecommendation,
 } from '../api';
+import type { LauncherCommand, SurfaceId } from '../App';
 
-interface CommandBarProps {
+interface AppNavBarProps {
+  branding: {
+    mspName: string;
+    abbreviation: string;
+    logos: {
+      markUrl?: string | undefined;
+      wordmarkUrl?: string | undefined;
+    };
+  };
   navigation: NavigationItem[];
+  activeSurface: SurfaceId;
+  onNavigate: (surface: SurfaceId) => void;
+  onOpenLauncher: () => void;
   session: SessionResponse;
+  activeTenant?: TenantListItem | undefined;
+  statusLabel: string;
+}
+
+export function AppNavBar({
+  branding,
+  navigation,
+  activeSurface,
+  onNavigate,
+  onOpenLauncher,
+  session,
+  activeTenant,
+  statusLabel,
+}: AppNavBarProps) {
+  return (
+    <header className="app-nav panel">
+      <div className="app-nav__brand">
+        <span className="app-nav__logo">
+          {branding.logos.markUrl ? <img className="app-nav__logo-image" src={branding.logos.markUrl} alt={`${branding.mspName} mark`} /> : branding.abbreviation}
+        </span>
+        <div>
+          {branding.logos.wordmarkUrl ? <img className="app-nav__wordmark" src={branding.logos.wordmarkUrl} alt={`${branding.mspName} wordmark`} /> : <strong>{branding.mspName}</strong>}
+          <p>{statusLabel}</p>
+        </div>
+      </div>
+
+      <nav className="app-nav__tabs" aria-label="Application navigation">
+        {navigation.map((item) => {
+          const isActive = item.id === activeSurface;
+
+          return (
+            <button
+              key={item.id}
+              className={`app-nav__tab${isActive ? ' app-nav__tab--active' : ''}`}
+              type="button"
+              onClick={() => onNavigate(item.id as SurfaceId)}
+            >
+              {item.label}
+            </button>
+          );
+        })}
+      </nav>
+
+      <div className="app-nav__meta">
+        <button className="secondary-action" type="button" onClick={onOpenLauncher}>
+          Launcher
+        </button>
+        <span>{activeTenant?.displayName ?? session.mspTenant.displayName}</span>
+        <span>{session.operator.displayName}</span>
+      </div>
+    </header>
+  );
+}
+
+interface SurfaceToolbarProps {
+  activeSurface: SurfaceId;
+  activeNavigation?: NavigationItem | undefined;
+  actions: Array<{
+    id: string;
+    label: string;
+    emphasis: 'primary' | 'secondary';
+  }>;
   activeTenant?: TenantListItem | undefined;
 }
 
-export function CommandBar({ navigation, session, activeTenant }: CommandBarProps) {
+export function SurfaceToolbar({ activeSurface, activeNavigation, actions, activeTenant }: SurfaceToolbarProps) {
   return (
-    <div className="command-bar">
-      <div className="command-bar__search">
-        <span className="command-bar__label">Quick Jump</span>
-        <input aria-label="Search AOIFMSP" placeholder="Search tickets, tenants, devices, workflows" />
+    <section className="surface-toolbar panel">
+      <div className="surface-toolbar__summary">
+        <p className="eyebrow">Scene Toolbar</p>
+        <h2>{activeNavigation?.label ?? 'Workspace'}</h2>
+        <span>
+          {activeTenant?.displayName ?? 'No tenant selected'} · {activeSurface.replace(/-/g, ' ')}
+        </span>
       </div>
-      <div className="command-bar__actions">
-        {navigation.slice(0, 3).map((item) => (
-          <button key={item.id} className="command-pill" type="button">
-            {item.label}
+
+      <div className="surface-toolbar__actions">
+        {actions.map((action) => (
+          <button
+            key={action.id}
+            className={action.emphasis === 'primary' ? 'primary-action' : 'secondary-action'}
+            type="button"
+          >
+            {action.label}
           </button>
         ))}
       </div>
-      <div className="persona-strip">
-        <span>{session.operator.displayName}</span>
-        <span>{session.operator.featureExposureMode}</span>
-        {activeTenant ? <span>{activeTenant.displayName}</span> : null}
+    </section>
+  );
+}
+
+interface SceneControlPanelProps {
+  activeSurface: SurfaceId;
+  technicianHome: TechnicianHomeResponse;
+  tenantDetail: TenantDetailResponse;
+  workflows: WorkflowListItem[];
+  connectorCatalog: ConnectorCatalogResponse;
+  connectorDetail: ConnectorDetailResponse;
+  connectorPreview: ConnectorImportPreview | null;
+  busyIntent: string | null;
+}
+
+export function SceneControlPanel({
+  activeSurface,
+  technicianHome,
+  tenantDetail,
+  workflows,
+  connectorCatalog,
+  connectorDetail,
+  connectorPreview,
+  busyIntent,
+}: SceneControlPanelProps) {
+  return (
+    <aside className="scene-panel panel">
+      {activeSurface === 'technician-workspace' ? (
+        <>
+          <div className="scene-panel__section">
+            <p className="eyebrow">Focused Ticket</p>
+            <h3>{technicianHome.highlightedTicket?.title ?? 'No active ticket'}</h3>
+            <p>{technicianHome.highlightedTicket?.summary ?? 'Select a ticket to inspect context and actions.'}</p>
+          </div>
+          <div className="scene-panel__section">
+            <p className="eyebrow">Queue State</p>
+            <ul className="mini-list">
+              {technicianHome.queueSummary.map((queue) => (
+                <li key={queue.label}>
+                  <strong>{queue.label}</strong>
+                  <span>{queue.count} items</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div className="scene-panel__section">
+            <p className="eyebrow">Quick Controls</p>
+            <div className="ticket-card__tags">
+              <span>Attach Runbook</span>
+              <span>Queue Workflow</span>
+              <span>Escalate</span>
+            </div>
+          </div>
+        </>
+      ) : null}
+
+      {activeSurface === 'workflow-designer' ? (
+        <>
+          <div className="scene-panel__section">
+            <p className="eyebrow">Selected Block</p>
+            <h3>AI Draft Assistant</h3>
+            <p>Context-aware generation with approval gates and technician follow-up outputs.</p>
+          </div>
+          <div className="scene-panel__section">
+            <p className="eyebrow">Scene Controls</p>
+            <ul className="mini-list">
+              <li>
+                <strong>Canvas Zoom</strong>
+                <span>84%</span>
+              </li>
+              <li>
+                <strong>Snap Mode</strong>
+                <span>Enabled</span>
+              </li>
+              <li>
+                <strong>Template Basis</strong>
+                <span>{technicianHome.highlightedTicket?.tenantDisplayName ?? 'Generic'}</span>
+              </li>
+            </ul>
+          </div>
+          <div className="scene-panel__section">
+            <p className="eyebrow">Draft Queue</p>
+            <ul className="mini-list">
+              {workflows.slice(0, 3).map((workflow) => (
+                <li key={workflow.id}>
+                  <strong>{workflow.displayName}</strong>
+                  <span>{workflow.designAssistantMode}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </>
+      ) : null}
+
+      {activeSurface === 'tenant-administration' ? (
+        <>
+          <div className="scene-panel__section">
+            <p className="eyebrow">Tenant Profile</p>
+            <h3>{tenantDetail.tenant.displayName}</h3>
+            <p>
+              {tenantDetail.tenant.primaryDomain} · {tenantDetail.tenant.defaultAdminAuthMode}
+            </p>
+          </div>
+          <div className="scene-panel__section">
+            <p className="eyebrow">Capabilities</p>
+            <div className="ticket-card__tags">
+              {tenantDetail.tenant.managementCapabilities.map((capability) => (
+                <span key={capability}>{capability}</span>
+              ))}
+            </div>
+          </div>
+          <div className="scene-panel__section">
+            <p className="eyebrow">Admin Focus</p>
+            <ul className="mini-list">
+              <li>
+                <strong>Managed Users</strong>
+                <span>{tenantDetail.managedUsers.length}</span>
+              </li>
+              <li>
+                <strong>Open Alerts</strong>
+                <span>{tenantDetail.alerts.length}</span>
+              </li>
+              <li>
+                <strong>Standards Results</strong>
+                <span>{tenantDetail.standards.length}</span>
+              </li>
+            </ul>
+          </div>
+        </>
+      ) : null}
+
+      {activeSurface === 'connectors' ? (
+        <>
+          <div className="scene-panel__section">
+            <p className="eyebrow">Selected Connector</p>
+            <h3>{connectorDetail.connector.displayName}</h3>
+            <p>{connectorDetail.connector.summary ?? 'Connector summary will appear here.'}</p>
+          </div>
+          <div className="scene-panel__section">
+            <p className="eyebrow">Connector Stats</p>
+            <ul className="mini-list">
+              <li>
+                <strong>Published Actions</strong>
+                <span>{connectorDetail.actions.length}</span>
+              </li>
+              <li>
+                <strong>Connections</strong>
+                <span>{connectorDetail.connections.length}</span>
+              </li>
+              <li>
+                <strong>Catalog Size</strong>
+                <span>{connectorCatalog.connectors.length} connectors</span>
+              </li>
+            </ul>
+          </div>
+          <div className="scene-panel__section">
+            <p className="eyebrow">Import State</p>
+            <ul className="mini-list">
+              <li>
+                <strong>Busy Intent</strong>
+                <span>{busyIntent ?? 'idle'}</span>
+              </li>
+              <li>
+                <strong>Preview Actions</strong>
+                <span>{connectorPreview?.actions.length ?? 0}</span>
+              </li>
+              <li>
+                <strong>Auth Modes</strong>
+                <span>{connectorDetail.connector.authSchemes.join(', ') || 'custom'}</span>
+              </li>
+            </ul>
+          </div>
+        </>
+      ) : null}
+    </aside>
+  );
+}
+
+interface LauncherOverlayProps {
+  open: boolean;
+  activeSurface: SurfaceId;
+  commands: LauncherCommand[];
+  onClose: () => void;
+  onSelect: (surface: SurfaceId) => void;
+}
+
+export function LauncherOverlay({ open, activeSurface, commands, onClose, onSelect }: LauncherOverlayProps) {
+  const [query, setQuery] = useState('');
+
+  const filteredCommands = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+
+    if (!normalizedQuery) {
+      return commands;
+    }
+
+    return commands.filter((command) => {
+      const haystack = `${command.label} ${command.description} ${command.surfaceId}`.toLowerCase();
+      return haystack.includes(normalizedQuery);
+    });
+  }, [commands, query]);
+
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <div className="launcher-overlay" role="dialog" aria-modal="true" aria-label="AOIFMSP launcher">
+      <button className="launcher-overlay__backdrop" type="button" onClick={onClose} aria-label="Close launcher" />
+      <div className="launcher-panel">
+        <div className="launcher-panel__header">
+          <p className="eyebrow">Launcher</p>
+          <span>{activeSurface.replace(/-/g, ' ')}</span>
+        </div>
+        <input
+          autoFocus
+          className="launcher-panel__input"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Jump to a surface or action"
+        />
+        <div className="launcher-panel__results">
+          {filteredCommands.map((command) => (
+            <button
+              key={command.id}
+              className="launcher-command"
+              type="button"
+              onClick={() => onSelect(command.surfaceId)}
+            >
+              <strong>{command.label}</strong>
+              <span>{command.description}</span>
+            </button>
+          ))}
+        </div>
       </div>
     </div>
+  );
+}
+
+interface ContextDockProps {
+  session: SessionResponse;
+  tenantDetail: TenantDetailResponse;
+  home: TechnicianHomeResponse;
+  workflows: WorkflowListItem[];
+  activeSurface: SurfaceId;
+  connectorCatalog: ConnectorCatalogResponse;
+  connectorDetail: ConnectorDetailResponse;
+  connectorPreview: ConnectorImportPreview | null;
+}
+
+export function ContextDock({
+  session,
+  tenantDetail,
+  home,
+  workflows,
+  activeSurface,
+  connectorCatalog,
+  connectorDetail,
+  connectorPreview,
+}: ContextDockProps) {
+  return (
+    <aside className="context-dock panel">
+      <div className="context-dock__section">
+        <p className="eyebrow">Operator</p>
+        <h3>{session.operator.displayName}</h3>
+        <p>{session.operator.userPrincipalName}</p>
+        <div className="ticket-card__tags">
+          {session.operator.roles.slice(0, 3).map((role) => (
+            <span key={role}>{role}</span>
+          ))}
+        </div>
+      </div>
+
+      <div className="context-dock__section">
+        <p className="eyebrow">Tenant Focus</p>
+        <h3>{tenantDetail.tenant.displayName}</h3>
+        <p>
+          {tenantDetail.tenant.primaryDomain} · {tenantDetail.tenant.openTicketCount} open tickets
+        </p>
+      </div>
+
+      <div className="context-dock__section">
+        <p className="eyebrow">Live Queue</p>
+        <ul className="mini-list">
+          {home.tickets.slice(0, 3).map((ticket) => (
+            <li key={ticket.id}>
+              <strong>{ticket.title}</strong>
+              <span>
+                {ticket.priority} · {ticket.status}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div className="context-dock__section">
+        <p className="eyebrow">Surface Assist</p>
+        <ul className="mini-list">
+          {activeSurface === 'workflow-designer'
+            ? workflows.slice(0, 3).map((workflow) => (
+                <li key={workflow.id}>
+                  <strong>{workflow.displayName}</strong>
+                  <span>{workflow.designAssistantMode}</span>
+                </li>
+              ))
+            : activeSurface === 'connectors'
+              ? connectorDetail.connections.slice(0, 3).map((connection) => (
+                  <li key={connection.id}>
+                    <strong>{connection.displayName}</strong>
+                    <span>
+                      {connection.authType} · {connection.scopeType}
+                    </span>
+                  </li>
+                ))
+              : tenantDetail.recommendedWorkflows.slice(0, 3).map((workflow) => (
+                  <li key={workflow.id}>
+                    <strong>{workflow.displayName}</strong>
+                    <span>{workflow.status}</span>
+                  </li>
+                ))}
+        </ul>
+      </div>
+
+      {activeSurface === 'connectors' ? (
+        <div className="context-dock__section">
+          <p className="eyebrow">Import Preview</p>
+          <ul className="mini-list">
+            <li>
+              <strong>{connectorCatalog.connectors.length} catalog connectors</strong>
+              <span>{connectorCatalog.connections.length} authenticated connections</span>
+            </li>
+            <li>
+              <strong>{connectorPreview?.displayName ?? connectorDetail.connector.displayName}</strong>
+              <span>{connectorPreview?.actions.length ?? connectorDetail.actions.length} available actions</span>
+            </li>
+          </ul>
+        </div>
+      ) : null}
+    </aside>
   );
 }
 
@@ -45,28 +465,9 @@ export function TechnicianWorkspace({ home }: TechnicianWorkspaceProps) {
   const highlightedTicket = home.highlightedTicket;
 
   return (
-    <section className="panel panel--feature technician-shell">
-      <header className="panel__header">
-        <div>
-          <p className="eyebrow">Technician Workspace</p>
-          <h2>Tickets stay connected to the tenant, device, docs, and actions needed to resolve them</h2>
-        </div>
-        <button className="primary-action" type="button">
-          Launch Guided Action
-        </button>
-      </header>
-
-      <div className="queue-strip">
-        {home.queueSummary.map((queue) => (
-          <div key={queue.label} className="queue-pill">
-            <strong>{queue.count}</strong>
-            <span>{queue.label}</span>
-          </div>
-        ))}
-      </div>
-
-      <div className="technician-shell__grid">
-        <article className="ticket-card ticket-card--active">
+    <section className="surface-page surface-page--technician">
+      <div className="surface-page__grid surface-page__grid--technician">
+        <article className="ticket-card ticket-card--active ticket-card--primary">
           {highlightedTicket ? (
             <>
               <p className="ticket-card__meta">
@@ -100,11 +501,16 @@ export function TechnicianWorkspace({ home }: TechnicianWorkspaceProps) {
           )}
         </article>
 
-        <article className="context-stack">
-          <div className="context-panel">
-            <p className="eyebrow">Current Queue</p>
+        <div className="surface-stack-mini">
+          <article className="context-panel panel-scroll">
+            <div className="panel-scroll__header">
+              <p className="eyebrow">Current Queue</p>
+              <button className="secondary-action" type="button">
+                Run Guided Action
+              </button>
+            </div>
             <ul className="context-list">
-              {home.tickets.slice(0, 3).map((ticket) => (
+              {home.tickets.map((ticket) => (
                 <li key={ticket.id}>
                   <strong>{ticket.title}</strong>
                   <span>
@@ -113,9 +519,15 @@ export function TechnicianWorkspace({ home }: TechnicianWorkspaceProps) {
                 </li>
               ))}
             </ul>
-          </div>
-          <div className="context-panel">
-            <p className="eyebrow">Active Alerts</p>
+          </article>
+
+          <article className="context-panel panel-scroll">
+            <div className="panel-scroll__header">
+              <p className="eyebrow">Active Alerts</p>
+              <button className="secondary-action" type="button">
+                View Queue
+              </button>
+            </div>
             <ul className="context-list">
               {home.activeAlerts.map((alert) => (
                 <li key={alert.id}>
@@ -126,8 +538,8 @@ export function TechnicianWorkspace({ home }: TechnicianWorkspaceProps) {
                 </li>
               ))}
             </ul>
-          </div>
-        </article>
+          </article>
+        </div>
       </div>
     </section>
   );
@@ -141,37 +553,56 @@ interface WorkflowStudioProps {
 
 export function WorkflowStudio({ recommendations, workflows, highlightedTicket }: WorkflowStudioProps) {
   return (
-    <section className="panel workflow-studio">
-      <header className="panel__header">
-        <div>
-          <p className="eyebrow">Workflow Designer</p>
-          <h2>Design automations from the work in front of the technician, not from a blank expert canvas</h2>
-        </div>
-        <button className="secondary-action" type="button">
-          Draft With AI
-        </button>
-      </header>
-
-      <div className="workflow-studio__layout">
-        <div className="workflow-canvas">
-          <div className="workflow-canvas__lane workflow-canvas__lane--trigger">Trigger</div>
-          <div className="workflow-canvas__node">{highlightedTicket?.title ?? 'Select Ticket Context'}</div>
-          <div className="workflow-canvas__node workflow-canvas__node--accent">Tenant Admin Action</div>
-          <div className="workflow-canvas__node">Documentation Update</div>
-          <div className="workflow-canvas__node">Technician Follow-Up</div>
+    <section className="surface-page surface-page--workflow">
+      <div className="workflow-scene">
+        <div className="workflow-scene__hud">
+          <div>
+            <p className="eyebrow">Workflow Scene</p>
+            <h3>{highlightedTicket?.title ?? 'New automation draft'}</h3>
+          </div>
+          <div className="ticket-card__tags">
+            <span>{highlightedTicket?.tenantDisplayName ?? 'No tenant selected'}</span>
+            <span>{highlightedTicket?.relatedDeviceName ?? 'No device linked'}</span>
+          </div>
         </div>
 
-        <aside className="workflow-inspector">
-          <h3>Suggested Blocks</h3>
-          <ul className="recommendation-list">
+        <div className="workflow-scene__toolbelt panel-scroll">
+          <div className="panel-scroll__header">
+            <p className="eyebrow">Toolbelt</p>
+          </div>
+          <ul className="mini-list">
             {recommendations.map((item) => (
               <li key={item.id}>
                 <strong>{item.title}</strong>
                 <span>{item.category}</span>
-                <p>{item.summary}</p>
               </li>
             ))}
           </ul>
+        </div>
+
+        <div className="workflow-scene__stage workflow-canvas workflow-canvas--full panel-scroll">
+          <div className="workflow-stage__anchor workflow-canvas__lane workflow-canvas__lane--trigger">Trigger</div>
+          <div className="workflow-stage__column">
+            <div className="workflow-canvas__node">{highlightedTicket?.title ?? 'Select Ticket Context'}</div>
+            <div className="workflow-canvas__node workflow-canvas__node--accent">Load Tenant Admin Context</div>
+            <div className="workflow-canvas__node">Review Documentation</div>
+          </div>
+          <div className="workflow-stage__column workflow-stage__column--deep">
+            <div className="workflow-canvas__node workflow-canvas__node--accent">AI Draft Assistant</div>
+            <div className="workflow-canvas__node">Approval Gate</div>
+            <div className="workflow-canvas__node">Technician Follow-Up</div>
+          </div>
+        </div>
+
+        <aside className="workflow-scene__inspector workflow-inspector panel-scroll">
+          <div className="panel-scroll__header">
+            <p className="eyebrow">Inspector</p>
+            <button className="primary-action" type="button">
+              Draft With AI
+            </button>
+          </div>
+          <h3>Active Block</h3>
+          <p>Context-driven technician run with tenant, ticket, and documentation bindings already attached.</p>
           <h3>Recent Drafts</h3>
           <ul className="mini-list">
             {workflows.map((workflow) => (
@@ -196,37 +627,33 @@ interface TenantAdministrationProps {
 
 export function TenantAdministration({ modes, tenantDetail }: TenantAdministrationProps) {
   return (
-    <section className="panel tenant-admin">
-      <header className="panel__header">
+    <section className="surface-page surface-page--tenant-admin">
+      <div className="tenant-admin__hero context-panel">
         <div>
           <p className="eyebrow">Tenant Administration</p>
-          <h2>{tenantDetail.tenant.displayName} is ready for guided user, standards, and ticket-linked actions</h2>
+          <h3>{tenantDetail.tenant.displayName}</h3>
+          <p>
+            {tenantDetail.tenant.primaryDomain} · {tenantDetail.tenant.gdapRelationshipState} GDAP ·{' '}
+            {tenantDetail.tenant.defaultAdminAuthMode}
+          </p>
         </div>
         <div className="mode-switcher">
           {modes.map((mode) => (
             <span key={mode}>{mode}</span>
           ))}
         </div>
-      </header>
+      </div>
 
-      <div className="tenant-admin__summary-grid">
-        <article className="admin-card">
-          <p className="eyebrow">Tenant Posture</p>
-          <h3>{tenantDetail.tenant.primaryDomain}</h3>
-          <p>
-            {tenantDetail.tenant.gdapRelationshipState} GDAP · {tenantDetail.tenant.defaultAdminAuthMode} ·{' '}
-            {tenantDetail.tenant.openTicketCount} open tickets
-          </p>
-          <div className="ticket-card__tags">
-            {tenantDetail.tenant.managementCapabilities.map((capability) => (
-              <span key={capability}>{capability}</span>
-            ))}
+      <div className="surface-page__grid surface-page__grid--tenant-admin">
+        <article className="admin-card panel-scroll">
+          <div className="panel-scroll__header">
+            <p className="eyebrow">Managed Users</p>
+            <button className="primary-action" type="button">
+              Add User
+            </button>
           </div>
-        </article>
-        <article className="admin-card">
-          <p className="eyebrow">Managed Users</p>
           <ul className="mini-list">
-            {tenantDetail.managedUsers.slice(0, 3).map((user) => (
+            {tenantDetail.managedUsers.map((user) => (
               <li key={user.id}>
                 <strong>{user.displayName}</strong>
                 <span>
@@ -236,26 +663,16 @@ export function TenantAdministration({ modes, tenantDetail }: TenantAdministrati
             ))}
           </ul>
         </article>
-        <article className="admin-card">
-          <p className="eyebrow">Sync and Standards</p>
-          <ul className="mini-list">
-            {tenantDetail.syncState.map((item) => (
-              <li key={item.datasetName}>
-                <strong>{item.datasetName}</strong>
-                <span>
-                  {item.status} · {item.recordCount ?? 0} records
-                </span>
-              </li>
-            ))}
-          </ul>
-        </article>
-      </div>
 
-      <div className="tenant-admin__cards">
-        <article className="admin-card">
-          <h3>Devices and Docs</h3>
+        <article className="admin-card panel-scroll">
+          <div className="panel-scroll__header">
+            <p className="eyebrow">Devices and Docs</p>
+            <button className="secondary-action" type="button">
+              Open Context
+            </button>
+          </div>
           <ul className="mini-list">
-            {tenantDetail.devices.slice(0, 2).map((device) => (
+            {tenantDetail.devices.map((device) => (
               <li key={device.id}>
                 <strong>{device.displayName}</strong>
                 <span>
@@ -263,7 +680,7 @@ export function TenantAdministration({ modes, tenantDetail }: TenantAdministrati
                 </span>
               </li>
             ))}
-            {tenantDetail.documentation.slice(0, 2).map((record) => (
+            {tenantDetail.documentation.map((record) => (
               <li key={record.id}>
                 <strong>{record.displayName}</strong>
                 <span>{record.category ?? 'Documentation'}</span>
@@ -271,8 +688,14 @@ export function TenantAdministration({ modes, tenantDetail }: TenantAdministrati
             ))}
           </ul>
         </article>
-        <article className="admin-card">
-          <h3>Open Alerts</h3>
+
+        <article className="admin-card panel-scroll">
+          <div className="panel-scroll__header">
+            <p className="eyebrow">Alerts and Standards</p>
+            <button className="secondary-action" type="button">
+              Review Drift
+            </button>
+          </div>
           <ul className="mini-list">
             {tenantDetail.alerts.map((alert) => (
               <li key={alert.id}>
@@ -282,16 +705,11 @@ export function TenantAdministration({ modes, tenantDetail }: TenantAdministrati
                 </span>
               </li>
             ))}
-          </ul>
-        </article>
-        <article className="admin-card">
-          <h3>Recommended Workflows</h3>
-          <ul className="mini-list">
-            {tenantDetail.recommendedWorkflows.map((workflow) => (
-              <li key={workflow.id}>
-                <strong>{workflow.displayName}</strong>
+            {tenantDetail.standards.map((standard) => (
+              <li key={standard.standardId}>
+                <strong>{standard.standardId}</strong>
                 <span>
-                  {workflow.status} · {workflow.designAssistantMode}
+                  {standard.severity} · {standard.status}
                 </span>
               </li>
             ))}
@@ -301,4 +719,7 @@ export function TenantAdministration({ modes, tenantDetail }: TenantAdministrati
     </section>
   );
 }
+
+
+
 

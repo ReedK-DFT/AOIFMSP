@@ -29,6 +29,12 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Build Application Artifacts
+        run: |
+          VITE_AOIFMSP_API_MODE=mock npm run build -w @aoifmsp/web
+          npm run build -w @aoifmsp/functions
+          npm run package:functions
+
       - name: Build Bicep Templates
         uses: azure/cli@v2
         with:

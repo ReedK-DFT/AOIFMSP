@@ -297,7 +297,7 @@ Import pipeline:
 
 1. Upload or reference a Swagger/OpenAPI definition.
 2. Parse operations, schemas, parameters, security schemes, and pagination hints.
-3. Generate normalized action metadata for the visual designer.
+3. Generate normalized platform-action metadata from imported connector actions instead of exposing raw connector operations directly.\n4. Classify each imported action as authoritative, augmenting, fallback, redundant, or disabled based on tool-role and overlap rules.\n5. Publish only curated normalized actions into the visual designer and direct admin surfaces.
 4. Store the raw definition and generated artifacts.
 5. Allow admins to override labels, categories, auth mapping, and hidden fields.
 
@@ -733,7 +733,7 @@ Use Application Insights for:
 - Block editor surface with workflow JSON serialization
 - Technician workspace shell with ticket, tenant, device, and documentation context panels
 - AI-assisted drafting, explanation, and validation experiences in the workflow designer
-- Admin pages for connectors, connections, client tenants, execution history, AI agent governance, standards, alerts, tenant groups, tickets, devices, and documentation context
+- Admin pages for connectors, normalized action review, connections, client tenants, execution history, AI agent governance, standards, alerts, tenant groups, tickets, devices, and documentation context
 
 ### Backend Functions
 
@@ -770,14 +770,14 @@ Recommended deployment model:
 - GitHub OIDC with Microsoft Entra for Azure authentication
 - Infrastructure as code for platform resources, runtime identities, and RBAC assignments
 - Optional policy-pack deployment through a companion workflow
-- One-time bootstrap only for the GitHub-to-Azure trust relationship and initial deployment identity permissions
+- One-time bootstrap only for the GitHub-to-Azure trust relationship, initial deployment identity permissions, and Graph consent needed for the AOIFMSP Admins group bootstrap
 
 Architectural rule:
 
 - AOIFMSP should not rely on manual portal setup for its steady-state deployment path.
 - Security-sensitive role assignments for platform runtime identities should be created by infrastructure code and versioned in the repo.
 
-Detailed guidance lives in docs/deployment-automation.md.
+Detailed guidance lives in docs/deployment-automation.md. Connector normalization guidance lives in docs/action-normalization.md.
 
 ## Open Design Questions
 
@@ -803,6 +803,7 @@ Build the platform in five layers:
 This sequencing minimizes risk by proving the metadata model and execution engine before more autonomous AI capabilities are introduced.
 
 Before production rollout, AOIFMSP should also complete the controls described in `docs/security-baseline.md`.
+
 
 
 

@@ -4,6 +4,7 @@ param namePrefix string
 @minLength(1)
 param environmentName string
 param tags object = {}
+param deploymentPrincipalObjectId string = ''
 
 @allowed([
   'Enabled'
@@ -55,6 +56,20 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
     minimumTlsVersion: 'TLS1_2'
     publicNetworkAccess: storagePublicNetworkAccess
     supportsHttpsTrafficOnly: true
+  }
+}
+
+resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
+  parent: storageAccount
+  name: 'default'
+  properties: {
+    cors: {
+      corsRules: []
+    }
+    deleteRetentionPolicy: {
+      enabled: true
+      days: 7
+    }
   }
 }
 
@@ -188,6 +203,14 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
           value: 'managedidentity'
         }
         {
+          name: 'AOIFMSP_RUNTIME_MODE'
+          value: 'azure'
+        }
+        {
+          name: 'AOIFMSP_ENABLE_DEMO_SEED'
+          value: 'false'
+        }
+        {
           name: 'AOIFMSP_AZURE_STORAGE_ACCOUNT_NAME'
           value: storageAccount.name
         }
@@ -252,6 +275,16 @@ resource functionKeyVaultSecretsUser 'Microsoft.Authorization/roleAssignments@20
   }
 }
 
+resource deploymentStorageBlobDataContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(deploymentPrincipalObjectId)) {
+  name: guid(storageAccount.id, deploymentPrincipalObjectId, 'deployment-storage-blob-data-contributor')
+  scope: storageAccount
+  properties: {
+    principalId: deploymentPrincipalObjectId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: storageBlobDataContributorRoleId
+  }
+}
+
 output storageAccountName string = storageAccount.name
 output keyVaultName string = keyVault.name
 output keyVaultUrl string = keyVault.properties.vaultUri
@@ -262,3 +295,6 @@ output logAnalyticsWorkspaceName string = logAnalyticsWorkspace.name
 output storageTableEndpoint string = storageAccount.properties.primaryEndpoints.table
 output storageBlobEndpoint string = storageAccount.properties.primaryEndpoints.blob
 output storageQueueEndpoint string = storageAccount.properties.primaryEndpoints.queue
+output staticWebsiteUrl string = storageAccount.properties.primaryEndpoints.web
+output functionAppUrl string = 'https://${functionApp.name}.azurewebsites.net'
+

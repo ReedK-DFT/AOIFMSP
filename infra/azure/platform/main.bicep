@@ -17,6 +17,9 @@ param environmentName string = 'prod'
 @description('Optional resource tags applied to created resources.')
 param tags object = {}
 
+@description('Optional object id of the GitHub deployment principal for static-site upload RBAC.')
+param deploymentPrincipalObjectId string = ''
+
 @allowed([
   'Enabled'
   'Disabled'
@@ -53,6 +56,7 @@ module platform './resource-group.bicep' = {
     namePrefix: namePrefix
     environmentName: environmentName
     tags: tags
+    deploymentPrincipalObjectId: deploymentPrincipalObjectId
     storagePublicNetworkAccess: storagePublicNetworkAccess
     keyVaultPublicNetworkAccess: keyVaultPublicNetworkAccess
     appServicePublicNetworkAccess: appServicePublicNetworkAccess
@@ -64,9 +68,11 @@ output storageAccountName string = platform.outputs.storageAccountName
 output keyVaultName string = platform.outputs.keyVaultName
 output keyVaultUrl string = platform.outputs.keyVaultUrl
 output functionAppName string = platform.outputs.functionAppName
+output functionAppUrl string = platform.outputs.functionAppUrl
 output functionPrincipalId string = platform.outputs.functionPrincipalId
 output appInsightsName string = platform.outputs.appInsightsName
 output logAnalyticsWorkspaceName string = platform.outputs.logAnalyticsWorkspaceName
 output storageTableEndpoint string = platform.outputs.storageTableEndpoint
 output storageBlobEndpoint string = platform.outputs.storageBlobEndpoint
 output storageQueueEndpoint string = platform.outputs.storageQueueEndpoint
+output staticWebsiteUrl string = platform.outputs.staticWebsiteUrl
