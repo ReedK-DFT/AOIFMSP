@@ -32,7 +32,7 @@ Important boundary:
 
 Recommended default:
 
-- Use Foundry basic setup for MVP and for most MSPs.
+- Use Foundry basic setup by default for development and test, and allow it in production only after explicit security review for lower-sensitivity scenarios.
 
 Clean upgrade path:
 
@@ -91,7 +91,7 @@ Most entities should include these fields in addition to table keys:
 - `updatedBy`
 - `tagsJson` as a JSON string when lightweight tagging is needed
 - `schemaVersion`
-- `managementMode` when an entity needs to distinguish direct UI management, workflow automation, or mixed use
+- `managementMode`
 
 ### Table Storage Limits
 
@@ -114,6 +114,7 @@ The storage schema in this document assumes these production controls:
 - Key Vault uses soft delete, purge protection, diagnostics, and private or tightly restricted network access
 - OBO refresh tokens and equivalent secure materials remain only in Key Vault or equivalent secure stores
 - Foundry setup mode is selected through a documented security review
+
 ## Table Storage Schema
 
 ## Table: `MspTenants`
@@ -337,7 +338,7 @@ Fields:
 Notes:
 
 - `setupMode` should be `basic` or `standard`.
-- `basic` is the default for MVP and most MSPs.
+- `basic` should be treated as the default development and test posture and as an explicitly reviewed option for lower-sensitivity production scenarios.
 - Resource IDs for Storage, Cosmos DB, and AI Search are optional for `basic` and expected for `standard`.
 
 
@@ -776,7 +777,7 @@ Fields:
 - `importedBy`
 - `publishedAt`
 - `schemaVersion`
-- `managementMode` when an entity needs to distinguish direct UI management, workflow automation, or mixed use
+- `managementMode`
 
 Notes:
 
@@ -983,7 +984,7 @@ Fields:
 - `publishedBy`
 - `sourceDraftHash`
 - `schemaVersion`
-- `managementMode` when an entity needs to distinguish direct UI management, workflow automation, or mixed use
+- `managementMode`
 
 Notes:
 
@@ -1770,8 +1771,8 @@ The schema above is optimized for these MVP queries:
 - Denormalization is expected and acceptable where it simplifies UI reads.
 - Immutable version records should never be updated after publication except for operational metadata if truly required.
 - Execution records should prefer append-only behavior to preserve auditability.
-- Foundry basic setup is the default cost and complexity posture.
-- Standard Foundry BYO resources are an upgrade path, not a baseline requirement.
+- Foundry basic setup is the default development and test posture, not an unconditional production baseline.
+- Standard Foundry BYO resources remain the upgrade path when security, governance, or data residency requirements demand it.
 - Built-in tenant and user management should reuse the workflow action model and default to GDAP-backed delegated/OBO execution for customer administration.
 
 ## Recommended Next Implementation Artifacts
@@ -1783,6 +1784,8 @@ After this document, the next useful assets are:
 3. Validation schemas for workflow drafts, workflow versions, AI agent nodes, queue messages, UI action maps, and security-sensitive configuration objects.
 4. Example seed data for one MSP, one client tenant, one tenant-management profile, one managed user set, one tenant group, one standards template, one alert, one ticket, one device, one documentation record, one connector, one connection, one agent, and one workflow.
 5. A policy pack or checklist that validates `docs/security-baseline.md` for each environment before deployment.
+
+
 
 
 

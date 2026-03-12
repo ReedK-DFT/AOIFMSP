@@ -1,0 +1,22 @@
+{
+  "name": "aoifmsp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AOIFMSP platform contracts and data model types",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "typescript": "^5.8.2"
+  },
+  "dependencies": {
+    "@azure/data-tables": "^13.3.2",
+    "@azure/identity": "^4.13.0",
+    "@azure/keyvault-secrets": "^4.10.0",
+    "@azure/storage-blob": "^12.31.0",
+    "@azure/storage-queue": "^12.29.0",
+    "zod": "^4.3.6"
+  }
+}
