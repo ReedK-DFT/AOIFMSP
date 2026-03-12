@@ -1,0 +1,84 @@
+name: Deploy Platform
+
+on:
+  workflow_dispatch:
+    inputs:
+      location:
+        description: Azure region for deployment metadata and primary resources
+        required: true
+        default: eastus
+      resource_group_name:
+        description: Resource group name for the AOIFMSP environment
+        required: true
+      name_prefix:
+        description: Short prefix used when naming AOIFMSP resources
+        required: true
+      environment_name:
+        description: Environment label such as dev, test, or prod
+        required: true
+        default: prod
+      storage_public_network_access:
+        description: Storage public network access
+        required: true
+        default: Enabled
+        type: choice
+        options:
+          - Enabled
+          - Disabled
+      key_vault_public_network_access:
+        description: Key Vault public network access
+        required: true
+        default: Enabled
+        type: choice
+        options:
+          - Enabled
+          - Disabled
+      app_service_public_network_access:
+        description: Function App public network access
+        required: true
+        default: Enabled
+        type: choice
+        options:
+          - Enabled
+          - Disabled
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy AOIFMSP Platform Foundation
+        uses: azure/cli@v2
+        with:
+          inlineScript: |
+            az bicep install
+            az deployment sub create \
+              --name "aoifmsp-${{ github.run_id }}-${{ github.run_attempt }}" \
+              --location "${{ inputs.location }}" \
+              --template-file infra/azure/platform/main.bicep \
+              --parameters \
+                resourceGroupName="${{ inputs.resource_group_name }}" \
+                namePrefix="${{ inputs.name_prefix }}" \
+                environmentName="${{ inputs.environment_name }}" \
+                storagePublicNetworkAccess="${{ inputs.storage_public_network_access }}" \
+                keyVaultPublicNetworkAccess="${{ inputs.key_vault_public_network_access }}" \
+                appServicePublicNetworkAccess="${{ inputs.app_service_public_network_access }}" \
+              --query properties.outputs \
+              --output json > deployment-outputs.json
+            echo '## Deployment Outputs' >> "$GITHUB_STEP_SUMMARY"
+            cat deployment-outputs.json >> "$GITHUB_STEP_SUMMARY"

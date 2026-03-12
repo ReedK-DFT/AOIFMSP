@@ -2,10 +2,17 @@
   "name": "aoifmsp",
   "version": "0.1.0",
   "private": true,
-  "description": "AOIFMSP platform contracts and data model types",
+  "description": "AOIFMSP platform contracts, services, and application shells",
   "type": "module",
+  "workspaces": [
+    "apps/functions",
+    "apps/web"
+  ],
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit && npm run typecheck -w @aoifmsp/functions && npm run typecheck -w @aoifmsp/web",
+    "build": "npm run build -w @aoifmsp/web && npm run build -w @aoifmsp/functions",
+    "dev:web": "npm run dev -w @aoifmsp/web",
+    "dev:functions": "npm run dev -w @aoifmsp/functions"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",

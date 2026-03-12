@@ -45,6 +45,8 @@ Production requirements:
 - Avoid static application secrets for AOIFMSP's own Azure resource access
 - Use Microsoft Entra authorization for Storage, Key Vault, and other supported services
 - Keep least-privilege RBAC assignments scoped to the specific resource and role needed
+- Prefer GitHub OIDC or equivalent federated workload identity for deployment automation instead of long-lived deployment secrets
+- Treat deployment identities as privileged identities with their own review, rotation, and scope controls
 
 ### GDAP and Secure Application Model
 
@@ -142,3 +144,5 @@ AOIFMSP keeps two companion artifacts alongside this baseline:
 - [policy/azure/README.md](/C:/Codex/AOIFMSP/policy/azure/README.md)
 
 Use the checklist for go-live readiness and the policy pack for enforceable platform controls.
+
+

@@ -1,0 +1,84 @@
+name: Deploy Policy Pack
+
+on:
+  workflow_dispatch:
+    inputs:
+      management_group_id:
+        description: Management group ID for the AOIFMSP policy deployment
+        required: true
+      location:
+        description: Azure region for the management-group deployment record
+        required: true
+        default: eastus
+      key_vault_effect:
+        description: Effect for Key Vault controls
+        required: true
+        default: Deny
+        type: choice
+        options:
+          - Audit
+          - Deny
+          - Disabled
+      storage_effect:
+        description: Effect for Storage controls
+        required: true
+        default: Deny
+        type: choice
+        options:
+          - Audit
+          - Deny
+          - Disabled
+      app_service_effect:
+        description: Effect for App Service controls
+        required: true
+        default: Deny
+        type: choice
+        options:
+          - Audit
+          - Deny
+          - Disabled
+      cognitive_services_effect:
+        description: Effect for Cognitive Services and Foundry controls
+        required: true
+        default: Deny
+        type: choice
+        options:
+          - Audit
+          - Deny
+          - Disabled
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy AOIFMSP Policy Pack
+        uses: azure/cli@v2
+        with:
+          inlineScript: |
+            az bicep install
+            az deployment mg create \
+              --management-group-id "${{ inputs.management_group_id }}" \
+              --name "aoifmsp-policy-${{ github.run_id }}-${{ github.run_attempt }}" \
+              --location "${{ inputs.location }}" \
+              --template-file policy/azure/main.bicep \
+              --parameters \
+                keyVaultEffect="${{ inputs.key_vault_effect }}" \
+                storageEffect="${{ inputs.storage_effect }}" \
+                appServiceEffect="${{ inputs.app_service_effect }}" \
+                cognitiveServicesEffect="${{ inputs.cognitive_services_effect }}"

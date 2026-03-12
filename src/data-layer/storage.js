@@ -1,0 +1,26 @@
+export const blobContainers = [
+    'connector-specs',
+    'connector-artifacts',
+    'ai-agent-definitions',
+    'ai-agent-runs',
+    'management-snapshots',
+    'technician-context',
+    'standards-artifacts',
+    'management-alerts',
+    'workflow-drafts',
+    'workflow-versions',
+    'execution-data',
+    'audit-details',
+    'tenant-data',
+];
+export const queueNames = [
+    'workflow-start',
+    'workflow-step',
+    'ai-agent-step',
+    'management-operation',
+    'technician-context-refresh',
+    'directory-sync-refresh',
+    'standards-evaluation',
+    'polling-trigger',
+    'dead-letter-review',
+];

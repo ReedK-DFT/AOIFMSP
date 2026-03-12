@@ -760,6 +760,25 @@ Use Application Insights for:
 - Foundry agent client and structured-output adapter
 - Input-action and command-surface abstraction for reusable UI interactions
 
+## Deployment Automation
+
+AOIFMSP should be deployable by an MSP through a standard repo-clone and GitHub Actions model.
+
+Recommended deployment model:
+
+- GitHub Actions as the standard deployment orchestrator
+- GitHub OIDC with Microsoft Entra for Azure authentication
+- Infrastructure as code for platform resources, runtime identities, and RBAC assignments
+- Optional policy-pack deployment through a companion workflow
+- One-time bootstrap only for the GitHub-to-Azure trust relationship and initial deployment identity permissions
+
+Architectural rule:
+
+- AOIFMSP should not rely on manual portal setup for its steady-state deployment path.
+- Security-sensitive role assignments for platform runtime identities should be created by infrastructure code and versioned in the repo.
+
+Detailed guidance lives in docs/deployment-automation.md.
+
 ## Open Design Questions
 
 - Whether the control plane API should be exposed through Azure Functions directly or through API Management later.
@@ -784,6 +803,7 @@ Build the platform in five layers:
 This sequencing minimizes risk by proving the metadata model and execution engine before more autonomous AI capabilities are introduced.
 
 Before production rollout, AOIFMSP should also complete the controls described in `docs/security-baseline.md`.
+
 
 
 

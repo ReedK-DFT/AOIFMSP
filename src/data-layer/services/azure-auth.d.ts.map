@@ -1,0 +1,1 @@
+{"version":3,"file":"azure-auth.d.ts","sourceRoot":"","sources":["azure-auth.ts"],"names":[],"mappings":"AACA,OAAO,KAAK,EAAE,eAAe,EAAE,MAAM,kBAAkB,CAAC;AAExD,OAAO,KAAK,EAAE,qBAAqB,EAAE,MAAM,gBAAgB,CAAC;AAE5D,wBAAgB,qBAAqB,CAAC,MAAM,EAAE,qBAAqB,GAAG,eAAe,CAyBpF"}
