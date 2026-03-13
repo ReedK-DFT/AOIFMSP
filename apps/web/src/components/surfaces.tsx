@@ -9,10 +9,12 @@ import type {
   TechnicianHomeResponse,
   TenantDetailResponse,
   TenantListItem,
+  WorkflowDetailResponse,
   WorkflowListItem,
-  WorkflowRecommendation,
 } from '../api';
 import type { LauncherCommand, SurfaceId } from '../App';
+export { WorkflowStudio } from './workflow-designer';
+import type { WorkflowSceneSnapshot } from './workflow-designer';
 
 interface AppNavBarProps {
   branding: {
@@ -89,11 +91,13 @@ interface SurfaceToolbarProps {
     id: string;
     label: string;
     emphasis: 'primary' | 'secondary';
+    disabled?: boolean | undefined;
   }>;
   activeTenant?: TenantListItem | undefined;
+  onAction: (actionId: string) => void;
 }
 
-export function SurfaceToolbar({ activeSurface, activeNavigation, actions, activeTenant }: SurfaceToolbarProps) {
+export function SurfaceToolbar({ activeSurface, activeNavigation, actions, activeTenant, onAction }: SurfaceToolbarProps) {
   return (
     <section className="surface-toolbar panel">
       <div className="surface-toolbar__summary">
@@ -110,6 +114,8 @@ export function SurfaceToolbar({ activeSurface, activeNavigation, actions, activ
             key={action.id}
             className={action.emphasis === 'primary' ? 'primary-action' : 'secondary-action'}
             type="button"
+            disabled={action.disabled}
+            onClick={() => onAction(action.id)}
           >
             {action.label}
           </button>
@@ -128,6 +134,8 @@ interface SceneControlPanelProps {
   connectorDetail: ConnectorDetailResponse;
   connectorPreview: ConnectorImportPreview | null;
   busyIntent: string | null;
+  workflowDetail: WorkflowDetailResponse;
+  workflowSceneState: WorkflowSceneSnapshot;
 }
 
 export function SceneControlPanel({
@@ -139,6 +147,8 @@ export function SceneControlPanel({
   connectorDetail,
   connectorPreview,
   busyIntent,
+  workflowDetail,
+  workflowSceneState,
 }: SceneControlPanelProps) {
   return (
     <aside className="scene-panel panel">
@@ -175,19 +185,31 @@ export function SceneControlPanel({
         <>
           <div className="scene-panel__section">
             <p className="eyebrow">Selected Block</p>
-            <h3>AI Draft Assistant</h3>
-            <p>Context-aware generation with approval gates and technician follow-up outputs.</p>
+            <h3>{workflowSceneState.selectedNodeLabel ?? workflowDetail.workflow.displayName}</h3>
+            <p>
+              {workflowSceneState.selectedNodeType
+                ? `${workflowSceneState.selectedNodeType} block selected in the main view.`
+                : 'Select a workflow block to inspect and edit it here.'}
+            </p>
           </div>
           <div className="scene-panel__section">
             <p className="eyebrow">Scene Controls</p>
             <ul className="mini-list">
               <li>
                 <strong>Canvas Zoom</strong>
-                <span>84%</span>
+                <span>{Math.round(workflowSceneState.zoom * 100)}%</span>
               </li>
               <li>
-                <strong>Snap Mode</strong>
-                <span>Enabled</span>
+                <strong>Draft State</strong>
+                <span>{workflowSceneState.isDirty ? 'Unsaved changes' : 'Saved'}</span>
+              </li>
+              <li>
+                <strong>Trigger Mode</strong>
+                <span>{workflowSceneState.triggerType ? workflowSceneState.triggerType.replace(/-/g, ' ') : 'manual'}</span>
+              </li>
+              <li>
+                <strong>Start Condition</strong>
+                <span>{workflowSceneState.triggerSummary ?? 'In-app launch'}</span>
               </li>
               <li>
                 <strong>Template Basis</strong>
@@ -198,6 +220,10 @@ export function SceneControlPanel({
           <div className="scene-panel__section">
             <p className="eyebrow">Draft Queue</p>
             <ul className="mini-list">
+              <li>
+                <strong>{workflowSceneState.nodeCount} blocks</strong>
+                <span>{workflowSceneState.edgeCount} links</span>
+              </li>
               {workflows.slice(0, 3).map((workflow) => (
                 <li key={workflow.id}>
                   <strong>{workflow.displayName}</strong>
@@ -545,81 +571,6 @@ export function TechnicianWorkspace({ home }: TechnicianWorkspaceProps) {
   );
 }
 
-interface WorkflowStudioProps {
-  recommendations: WorkflowRecommendation[];
-  workflows: WorkflowListItem[];
-  highlightedTicket: TechnicianHomeResponse['highlightedTicket'];
-}
-
-export function WorkflowStudio({ recommendations, workflows, highlightedTicket }: WorkflowStudioProps) {
-  return (
-    <section className="surface-page surface-page--workflow">
-      <div className="workflow-scene">
-        <div className="workflow-scene__hud">
-          <div>
-            <p className="eyebrow">Workflow Scene</p>
-            <h3>{highlightedTicket?.title ?? 'New automation draft'}</h3>
-          </div>
-          <div className="ticket-card__tags">
-            <span>{highlightedTicket?.tenantDisplayName ?? 'No tenant selected'}</span>
-            <span>{highlightedTicket?.relatedDeviceName ?? 'No device linked'}</span>
-          </div>
-        </div>
-
-        <div className="workflow-scene__toolbelt panel-scroll">
-          <div className="panel-scroll__header">
-            <p className="eyebrow">Toolbelt</p>
-          </div>
-          <ul className="mini-list">
-            {recommendations.map((item) => (
-              <li key={item.id}>
-                <strong>{item.title}</strong>
-                <span>{item.category}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <div className="workflow-scene__stage workflow-canvas workflow-canvas--full panel-scroll">
-          <div className="workflow-stage__anchor workflow-canvas__lane workflow-canvas__lane--trigger">Trigger</div>
-          <div className="workflow-stage__column">
-            <div className="workflow-canvas__node">{highlightedTicket?.title ?? 'Select Ticket Context'}</div>
-            <div className="workflow-canvas__node workflow-canvas__node--accent">Load Tenant Admin Context</div>
-            <div className="workflow-canvas__node">Review Documentation</div>
-          </div>
-          <div className="workflow-stage__column workflow-stage__column--deep">
-            <div className="workflow-canvas__node workflow-canvas__node--accent">AI Draft Assistant</div>
-            <div className="workflow-canvas__node">Approval Gate</div>
-            <div className="workflow-canvas__node">Technician Follow-Up</div>
-          </div>
-        </div>
-
-        <aside className="workflow-scene__inspector workflow-inspector panel-scroll">
-          <div className="panel-scroll__header">
-            <p className="eyebrow">Inspector</p>
-            <button className="primary-action" type="button">
-              Draft With AI
-            </button>
-          </div>
-          <h3>Active Block</h3>
-          <p>Context-driven technician run with tenant, ticket, and documentation bindings already attached.</p>
-          <h3>Recent Drafts</h3>
-          <ul className="mini-list">
-            {workflows.map((workflow) => (
-              <li key={workflow.id}>
-                <strong>{workflow.displayName}</strong>
-                <span>
-                  {workflow.status} · {workflow.designAssistantMode}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </aside>
-      </div>
-    </section>
-  );
-}
-
 interface TenantAdministrationProps {
   modes: string[];
   tenantDetail: TenantDetailResponse;
@@ -719,6 +670,12 @@ export function TenantAdministration({ modes, tenantDetail }: TenantAdministrati
     </section>
   );
 }
+
+
+
+
+
+
 
 
 

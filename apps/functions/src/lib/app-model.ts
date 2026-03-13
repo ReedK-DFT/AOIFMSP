@@ -1,6 +1,9 @@
 import {
   keyBuilders,
+  type ConnectionEntity,
   type ClientTenantEntity,
+  type ConnectorActionEntity,
+  type ConnectorEntity,
   type DataLayerService,
   type DeviceEntity,
   type DocumentationRecordEntity,
@@ -9,6 +12,7 @@ import {
   type ManagementSyncStateEntity,
   type StandardsResultEntity,
   type TicketEntity,
+  type WorkflowDocument,
   type WorkflowEntity,
 } from '../../../../src/index.js';
 import { demoContext } from './demo-seed.js';
@@ -45,6 +49,50 @@ export interface WorkflowSummary {
   status: string;
   designAssistantMode: string;
   description?: string | undefined;
+}
+
+export interface WorkflowAvailableAction {
+  id: string;
+  connectorId: string;
+  connectorDisplayName: string;
+  connectorVersionId: string;
+  actionId: string;
+  displayName: string;
+  category?: string | undefined;
+  method: string;
+  pathTemplate: string;
+  summary?: string | undefined;
+  isTriggerCapable: boolean;
+  suggestedConnectionIds: string[];
+}
+
+export interface WorkflowAvailableConnection {
+  id: string;
+  displayName: string;
+  connectorId: string;
+  connectorDisplayName: string;
+  connectorVersionId: string;
+  scopeType: 'msp' | 'client';
+  clientTenantId?: string | undefined;
+  clientTenantDisplayName?: string | undefined;
+  authType: string;
+  status: string;
+  healthStatus: string;
+  capabilities: string[];
+  lastTestedAt?: string | undefined;
+}
+
+export interface WorkflowDetailResponse {
+  mspTenantId: string;
+  workflow: WorkflowSummary & {
+    defaultClientTenantId?: string | undefined;
+    triggerModeSummary?: string | undefined;
+    lastRunAt?: string | undefined;
+    lastRunStatus?: string | undefined;
+  };
+  draft: WorkflowDocument;
+  availableActions: WorkflowAvailableAction[];
+  availableConnections: WorkflowAvailableConnection[];
 }
 
 export interface TechnicianTicketSummary {
@@ -211,6 +259,51 @@ export async function buildWorkflowSummaries(
       designAssistantMode: workflow.designAssistantMode,
       description: workflow.description,
     }));
+}
+
+export async function buildWorkflowDetailResponse(
+  service: DataLayerService,
+  workflowId: string,
+  mspTenantId = demoContext.mspTenantId,
+): Promise<WorkflowDetailResponse | null> {
+  const [workflow, draft, connectors, connectorActions, connections, clientTenants] = await Promise.all([
+    service.tables.workflows.getByKey(mspTenantId, workflowId),
+    service.documents.workflowDrafts.get(mspTenantId, workflowId),
+    service.tables.connectors.listByPartition(keyBuilders.partition.msp(mspTenantId)),
+    service.tables.connectorActions.listByPartition(keyBuilders.partition.msp(mspTenantId)),
+    service.tables.connections.listByPartition(keyBuilders.partition.msp(mspTenantId)),
+    service.tables.clientTenants.listByPartition(keyBuilders.partition.msp(mspTenantId)),
+  ]);
+
+  if (!workflow || !draft) {
+    return null;
+  }
+
+  const connectorsById = new Map(connectors.map((connector) => [connector.id, connector]));
+  const clientTenantNames = new Map(clientTenants.map((tenant) => [tenant.clientTenantId, tenant.displayName]));
+  const availableConnections = mapWorkflowConnections(connections, connectorsById, clientTenantNames);
+  const connectionIdsByConnector = buildConnectionLookup(availableConnections);
+
+  return {
+    mspTenantId,
+    workflow: {
+      id: workflow.id,
+      displayName: workflow.displayName,
+      status: workflow.status,
+      designAssistantMode: workflow.designAssistantMode,
+      description: workflow.description,
+      defaultClientTenantId: workflow.defaultClientTenantId,
+      triggerModeSummary: workflow.triggerModeSummary,
+      lastRunAt: workflow.lastRunAt,
+      lastRunStatus: workflow.lastRunStatus,
+    },
+    draft,
+    availableConnections,
+    availableActions: connectorActions
+      .slice()
+      .sort((left, right) => compareConnectorActions(left, right, connectorsById))
+      .map((action) => mapWorkflowAction(action, connectorsById, connectionIdsByConnector)),
+  };
 }
 
 export async function buildTechnicianHomeResponse(
@@ -454,6 +547,82 @@ function buildTenantListItem(
   };
 }
 
+function mapWorkflowConnections(
+  connections: ConnectionEntity[],
+  connectorsById: Map<string, ConnectorEntity>,
+  clientTenantNames: Map<string, string>,
+): WorkflowAvailableConnection[] {
+  return connections
+    .slice()
+    .sort((left, right) => left.displayName.localeCompare(right.displayName))
+    .map((connection) => ({
+      id: connection.id,
+      displayName: connection.displayName,
+      connectorId: connection.connectorId,
+      connectorDisplayName: connectorsById.get(connection.connectorId)?.displayName ?? connection.connectorId,
+      connectorVersionId: connection.connectorVersionId,
+      scopeType: connection.scopeType,
+      clientTenantId: connection.clientTenantId,
+      clientTenantDisplayName: connection.clientTenantId
+        ? clientTenantNames.get(connection.clientTenantId)
+        : undefined,
+      authType: connection.authType,
+      status: connection.status,
+      healthStatus: connection.healthStatus,
+      capabilities: parseStringArray(connection.capabilitiesJson),
+      lastTestedAt: connection.lastTestedAt,
+    }));
+}
+
+function buildConnectionLookup(connections: WorkflowAvailableConnection[]): Map<string, string[]> {
+  const lookup = new Map<string, string[]>();
+
+  for (const connection of connections) {
+    const current = lookup.get(connection.connectorId) ?? [];
+    current.push(connection.id);
+    lookup.set(connection.connectorId, current);
+  }
+
+  return lookup;
+}
+
+function mapWorkflowAction(
+  action: ConnectorActionEntity,
+  connectorsById: Map<string, ConnectorEntity>,
+  connectionIdsByConnector: Map<string, string[]>,
+): WorkflowAvailableAction {
+  return {
+    id: `${action.connectorId}:${action.connectorVersionId}:${action.actionId}`,
+    connectorId: action.connectorId,
+    connectorDisplayName: connectorsById.get(action.connectorId)?.displayName ?? action.connectorId,
+    connectorVersionId: action.connectorVersionId,
+    actionId: action.actionId,
+    displayName: action.displayName,
+    category: action.category,
+    method: action.method,
+    pathTemplate: action.pathTemplate,
+    summary: action.summary,
+    isTriggerCapable: action.isTriggerCapable,
+    suggestedConnectionIds: connectionIdsByConnector.get(action.connectorId) ?? [],
+  };
+}
+
+function compareConnectorActions(
+  left: ConnectorActionEntity,
+  right: ConnectorActionEntity,
+  connectorsById: Map<string, ConnectorEntity>,
+): number {
+  const byConnector = (connectorsById.get(left.connectorId)?.displayName ?? left.connectorId).localeCompare(
+    connectorsById.get(right.connectorId)?.displayName ?? right.connectorId,
+  );
+
+  if (byConnector !== 0) {
+    return byConnector;
+  }
+
+  return left.displayName.localeCompare(right.displayName);
+}
+
 function recommendWorkflows(
   ticket: TicketEntity,
   workflows: Array<WorkflowEntity & { searchText: string }>,
@@ -579,6 +748,7 @@ function parseStringArrayMap(value?: string): string[] {
 }
 
 type ClientTenantLike = ClientTenantEntity;
+
 
 
 

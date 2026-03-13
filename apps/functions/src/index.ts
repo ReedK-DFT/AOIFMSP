@@ -6,9 +6,11 @@ import './http/session.js';
 import './http/technician-home.js';
 import './http/tenants.js';
 import './http/workflows.js';
+import './http/workflow-detail.js';
 import './http/connectors.js';
 
 app.setup({
   enableHttpStream: true,
 });
+
 

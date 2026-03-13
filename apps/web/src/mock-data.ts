@@ -1,3 +1,5 @@
+import type { WorkflowDocument } from '../../../src/data-layer/workflows';
+
 export const mockBootstrapContext = {
   product: {
     name: 'AOIFMSP',
@@ -113,6 +115,42 @@ export const mockWorkflows = {
       description: 'Review findings and queue remediations without losing technician context.',
     },
   ],
+};
+
+export const mockWorkflowDetails = {
+  wf_demo_ticket_triage: {
+    mspTenantId: 'msp_demo',
+    workflow: {
+      ...mockWorkflows.items[0],
+      defaultClientTenantId: 'tenant_northwind',
+      triggerModeSummary: 'API polling from PSA ticket queue',
+      lastRunAt: '2026-03-12T15:05:00.000Z',
+      lastRunStatus: 'succeeded',
+    },
+    draft: buildTicketTriageWorkflowDraft('wf_demo_ticket_triage'),
+  },
+  wf_demo_user_onboarding: {
+    mspTenantId: 'msp_demo',
+    workflow: {
+      ...mockWorkflows.items[1],
+      defaultClientTenantId: 'tenant_wingtip',
+      triggerModeSummary: 'Webhook from onboarding intake',
+      lastRunAt: '2026-03-11T16:43:00.000Z',
+      lastRunStatus: 'succeeded',
+    },
+    draft: buildUserOnboardingWorkflowDraft('wf_demo_user_onboarding'),
+  },
+  wf_demo_standards_drift: {
+    mspTenantId: 'msp_demo',
+    workflow: {
+      ...mockWorkflows.items[2],
+      defaultClientTenantId: 'tenant_northwind',
+      triggerModeSummary: 'Cron schedule for standards review',
+      lastRunAt: '2026-03-12T14:41:00.000Z',
+      lastRunStatus: 'partial',
+    },
+    draft: buildStandardsDriftWorkflowDraft('wf_demo_standards_drift'),
+  },
 };
 
 export const mockTechnicianHome = {
@@ -999,5 +1037,431 @@ const sampleOpenApiSpec = {
     },
   },
 };
+
+
+
+const workflowDetailStore = new Map(
+  Object.entries(mockWorkflowDetails).map(([workflowId, detail]) => [workflowId, deepClone(detail)]),
+);
+
+export function getMockWorkflowDetail(workflowId: string, mspTenantId = 'msp_demo') {
+  const detail = workflowDetailStore.get(workflowId) ?? workflowDetailStore.get('wf_demo_ticket_triage');
+  if (!detail) {
+    throw new Error(`Unknown mock workflow: ${workflowId}`);
+  }
+
+  return {
+    ...deepClone(detail),
+    mspTenantId,
+    availableConnections: buildMockWorkflowConnections(),
+    availableActions: buildMockWorkflowAvailableActions(),
+  };
+}
+
+export function saveMockWorkflowDraft(
+  workflowId: string,
+  request: {
+    draft: WorkflowDocument;
+    displayName?: string | undefined;
+    description?: string | undefined;
+  },
+  mspTenantId = 'msp_demo',
+) {
+  const existing = workflowDetailStore.get(workflowId) ?? workflowDetailStore.get('wf_demo_ticket_triage');
+  if (!existing) {
+    throw new Error(`Unknown mock workflow: ${workflowId}`);
+  }
+
+  const nextDraft = deepClone(request.draft);
+  nextDraft.workflowId = workflowId;
+  nextDraft.displayName = request.displayName ?? nextDraft.displayName;
+
+  const nextDetail = {
+    ...deepClone(existing),
+    mspTenantId,
+    workflow: {
+      ...existing.workflow,
+      displayName: nextDraft.displayName,
+      description: request.description ?? existing.workflow.description,
+    },
+    draft: nextDraft,
+  };
+
+  workflowDetailStore.set(workflowId, deepClone(nextDetail));
+  const workflowIndex = mockWorkflows.items.findIndex((workflow) => workflow.id === workflowId);
+  if (workflowIndex >= 0) {
+    const currentWorkflow = mockWorkflows.items[workflowIndex]!;
+    mockWorkflows.items[workflowIndex] = {
+      ...currentWorkflow,
+      displayName: nextDraft.displayName,
+      description: request.description ?? currentWorkflow.description,
+    };
+  }
+
+  return getMockWorkflowDetail(workflowId, mspTenantId);
+}
+
+function buildMockWorkflowConnections() {
+  return mockConnectorCatalog.connections.map((connection) => ({
+    ...connection,
+    capabilities: [...connection.capabilities],
+  }));
+}
+
+function buildMockWorkflowAvailableActions() {
+  return Object.values(mockConnectorDetails)
+    .flatMap((detail) => {
+      const suggestedConnectionIds = detail.connections.map((connection) => connection.id);
+      return detail.actions.map((action) => ({
+        id: `${detail.connector.id}:${detail.versions[0]?.id ?? 'v1'}:${action.id}`,
+        connectorId: detail.connector.id,
+        connectorDisplayName: detail.connector.displayName,
+        connectorVersionId: detail.versions[0]?.id ?? 'v1',
+        actionId: action.id,
+        displayName: action.displayName,
+        category: action.category,
+        method: action.method,
+        pathTemplate: action.pathTemplate,
+        summary: action.summary,
+        isTriggerCapable: action.isTriggerCapable,
+        suggestedConnectionIds,
+      }));
+    })
+    .sort((left, right) => {
+      const byConnector = left.connectorDisplayName.localeCompare(right.connectorDisplayName);
+      return byConnector !== 0 ? byConnector : left.displayName.localeCompare(right.displayName);
+    });
+}
+
+function buildDefaultWorkflowErrorHandling(): WorkflowDocument['errorHandling'] {
+  return {
+    defaultNodePolicy: {
+      strategy: 'retry',
+      maxRetries: 2,
+      retryDelaySeconds: 30,
+      captureAs: 'lastError',
+    },
+    onTriggerFailure: {
+      strategy: 'continue',
+      captureAs: 'triggerError',
+    },
+    onUnhandledError: {
+      strategy: 'fail-workflow',
+      captureAs: 'unhandledError',
+    },
+  };
+}
+
+function buildTicketTriageWorkflowDraft(workflowId: string): WorkflowDocument {
+  return {
+    schemaVersion: 1,
+    workflowId,
+    displayName: 'Ticket Triage Hub',
+    trigger: {
+      type: 'polling',
+      config: {
+        connectorId: 'connector_psa',
+        connectorVersionId: 'v1',
+        actionId: 'listTickets',
+        connectionId: 'conn_psa_primary',
+        intervalMinutes: 10,
+        matchMode: 'new-items',
+      },
+    },
+    errorHandling: buildDefaultWorkflowErrorHandling(),
+    nodes: [
+      {
+        id: 'trigger-start',
+        type: 'trigger',
+        label: 'Poll Ticket Queue',
+        triggerType: 'polling',
+        config: {
+          queue: 'Needs Triage',
+          intervalMinutes: 10,
+        },
+        position: { x: 72, y: 120 },
+      },
+      {
+        id: 'load-ticket-context',
+        type: 'connector-action',
+        label: 'Load Ticket Context',
+        connectorId: 'connector_psa',
+        connectorVersionId: 'v1',
+        actionId: 'getTicketContext',
+        connectionId: 'conn_psa_primary',
+        inputs: {
+          includeTenant: true,
+          includeDevice: true,
+        },
+        position: { x: 330, y: 120 },
+      },
+      {
+        id: 'suggest-next-steps',
+        type: 'ai-agent',
+        label: 'Suggest Next Steps',
+        agentId: 'agent_triage_guide',
+        agentVersionId: 'v1',
+        foundryProjectRef: 'foundry-default',
+        operatingMode: 'suggest-only',
+        inputTemplate: {
+          includeDocumentation: true,
+        },
+        outputSchema: {
+          recommendations: 'array',
+          riskLevel: 'string',
+        },
+        approvalPolicy: {
+          required: false,
+        },
+        timeoutSeconds: 45,
+        maxRetries: 1,
+        position: { x: 602, y: 120 },
+      },
+      {
+        id: 'update-ticket-notes',
+        type: 'connector-action',
+        label: 'Update Ticket Notes',
+        connectorId: 'connector_psa',
+        connectorVersionId: 'v1',
+        actionId: 'appendTicketNote',
+        connectionId: 'conn_psa_primary',
+        inputs: {
+          noteSource: 'agent-summary',
+        },
+        position: { x: 874, y: 120 },
+      },
+    ],
+    edges: [
+      { id: 'edge-1', sourceNodeId: 'trigger-start', targetNodeId: 'load-ticket-context' },
+      { id: 'edge-2', sourceNodeId: 'load-ticket-context', targetNodeId: 'suggest-next-steps' },
+      { id: 'edge-3', sourceNodeId: 'suggest-next-steps', targetNodeId: 'update-ticket-notes' },
+    ],
+    variables: [
+      {
+        id: 'var_ticket_id',
+        name: 'ticketId',
+        type: 'string',
+      },
+    ],
+    bindings: {
+      connections: [
+        {
+          connectionId: 'conn_psa_primary',
+          connectorId: 'connector_psa',
+          alias: 'Primary PSA',
+          scopeType: 'msp',
+          requiredActions: ['getTicketContext', 'appendTicketNote'],
+        },
+      ],
+    },
+    ai: {
+      draftSource: 'manual-or-ai',
+      assumptions: ['Ticket queue polling runs against the PSA queue and enriches ticket context before technician review.'],
+    },
+    editor: {
+      viewport: {
+        zoom: 0.92,
+      },
+      selectedNodeIds: ['suggest-next-steps'],
+    },
+  };
+}
+
+function buildUserOnboardingWorkflowDraft(workflowId: string): WorkflowDocument {
+  return {
+    schemaVersion: 1,
+    workflowId,
+    displayName: 'Guided User Onboarding',
+    trigger: {
+      type: 'webhook',
+      config: {
+        webhookPath: '/hooks/onboarding/user-intake',
+        method: 'POST',
+        signatureMode: 'secret-header',
+        payloadBinding: 'body',
+      },
+    },
+    errorHandling: buildDefaultWorkflowErrorHandling(),
+    nodes: [
+      {
+        id: 'trigger-start',
+        type: 'trigger',
+        label: 'Inbound Onboarding Webhook',
+        triggerType: 'webhook',
+        config: {
+          source: 'hr-intake',
+          payloadBinding: 'body',
+        },
+        position: { x: 72, y: 108 },
+      },
+      {
+        id: 'create-user',
+        type: 'connector-action',
+        label: 'Create Entra User',
+        connectorId: 'connector_graph',
+        connectorVersionId: 'v1',
+        actionId: 'createUser',
+        connectionId: 'conn_graph_wingtip',
+        inputs: {
+          usageLocation: 'US',
+        },
+        position: { x: 332, y: 108 },
+      },
+      {
+        id: 'assign-license',
+        type: 'connector-action',
+        label: 'Assign License',
+        connectorId: 'connector_graph',
+        connectorVersionId: 'v1',
+        actionId: 'assignLicense',
+        connectionId: 'conn_graph_wingtip',
+        inputs: {
+          sku: 'Microsoft 365 E3',
+        },
+        position: { x: 602, y: 108 },
+      },
+      {
+        id: 'publish-doc-note',
+        type: 'javascript',
+        label: 'Add Checklist Note',
+        inlineScript: 'return { checklist: "created" };',
+        timeoutSeconds: 20,
+        position: { x: 872, y: 108 },
+      },
+    ],
+    edges: [
+      { id: 'edge-1', sourceNodeId: 'trigger-start', targetNodeId: 'create-user' },
+      { id: 'edge-2', sourceNodeId: 'create-user', targetNodeId: 'assign-license' },
+      { id: 'edge-3', sourceNodeId: 'assign-license', targetNodeId: 'publish-doc-note' },
+    ],
+    variables: [],
+    bindings: {
+      connections: [
+        {
+          connectionId: 'conn_graph_wingtip',
+          connectorId: 'connector_graph',
+          alias: 'Wingtip Graph',
+          scopeType: 'client',
+          requiredActions: ['createUser', 'assignLicense'],
+        },
+      ],
+    },
+    ai: {
+      draftSource: 'ai',
+      assumptions: ['The tenant already has GDAP and the platform app registration in place.', 'Inbound onboarding requests arrive through a signed webhook payload.'],
+    },
+    editor: {
+      viewport: {
+        zoom: 0.94,
+      },
+      selectedNodeIds: ['assign-license'],
+    },
+  };
+}
+
+function buildStandardsDriftWorkflowDraft(workflowId: string): WorkflowDocument {
+  return {
+    schemaVersion: 1,
+    workflowId,
+    displayName: 'Standards Drift Review',
+    trigger: {
+      type: 'schedule',
+      config: {
+        cron: '0 */4 * * *',
+        timezone: 'America/New_York',
+      },
+    },
+    errorHandling: buildDefaultWorkflowErrorHandling(),
+    nodes: [
+      {
+        id: 'trigger-start',
+        type: 'trigger',
+        label: 'Cron Standards Sweep',
+        triggerType: 'schedule',
+        config: {
+          cron: '0 */4 * * *',
+          timezone: 'America/New_York',
+        },
+        position: { x: 72, y: 132 },
+      },
+      {
+        id: 'load-drift-results',
+        type: 'connector-action',
+        label: 'Load Standards Result',
+        connectorId: 'connector_graph',
+        connectorVersionId: 'v1',
+        actionId: 'getStandardsResult',
+        connectionId: 'conn_graph_northwind',
+        inputs: {
+          standardId: 'std_mfa_enforcement',
+        },
+        position: { x: 338, y: 132 },
+      },
+      {
+        id: 'needs-approval',
+        type: 'condition',
+        label: 'Needs Approval?',
+        expression: 'result.severity === "high"',
+        position: { x: 612, y: 132 },
+      },
+      {
+        id: 'queue-remediation',
+        type: 'connector-action',
+        label: 'Queue Remediation Task',
+        connectorId: 'connector_psa',
+        connectorVersionId: 'v1',
+        actionId: 'createTask',
+        connectionId: 'conn_psa_primary',
+        inputs: {
+          board: 'Standards',
+        },
+        position: { x: 886, y: 132 },
+      },
+    ],
+    edges: [
+      { id: 'edge-1', sourceNodeId: 'trigger-start', targetNodeId: 'load-drift-results' },
+      { id: 'edge-2', sourceNodeId: 'load-drift-results', targetNodeId: 'needs-approval' },
+      { id: 'edge-3', sourceNodeId: 'needs-approval', targetNodeId: 'queue-remediation', conditionExpression: 'true' },
+    ],
+    variables: [],
+    bindings: {
+      connections: [
+        {
+          connectionId: 'conn_graph_northwind',
+          connectorId: 'connector_graph',
+          alias: 'Northwind Graph',
+          scopeType: 'client',
+          requiredActions: ['getStandardsResult'],
+        },
+        {
+          connectionId: 'conn_psa_primary',
+          connectorId: 'connector_psa',
+          alias: 'Primary PSA',
+          scopeType: 'msp',
+          requiredActions: ['createTask'],
+        },
+      ],
+    },
+    ai: {
+      draftSource: 'manual',
+      assumptions: ['High-severity findings require technician review before changes are applied.'],
+    },
+    editor: {
+      viewport: {
+        zoom: 0.9,
+      },
+      selectedNodeIds: ['needs-approval'],
+    },
+  };
+}
+
+function deepClone(value: unknown) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+
+
+
+
 
 

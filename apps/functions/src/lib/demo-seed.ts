@@ -592,6 +592,25 @@ async function seedData(service: DataLayerService): Promise<DataLayerService> {
   return service;
 }
 
+function buildDefaultWorkflowErrorHandling(): WorkflowDocument['errorHandling'] {
+  return {
+    defaultNodePolicy: {
+      strategy: 'retry',
+      maxRetries: 2,
+      retryDelaySeconds: 30,
+      captureAs: 'lastError',
+    },
+    onTriggerFailure: {
+      strategy: 'continue',
+      captureAs: 'triggerError',
+    },
+    onUnhandledError: {
+      strategy: 'fail-workflow',
+      captureAs: 'unhandledError',
+    },
+  };
+}
+
 function buildTicketTriageWorkflow(workflowId: string): WorkflowDocument {
   return {
     schemaVersion: 1,
@@ -603,6 +622,7 @@ function buildTicketTriageWorkflow(workflowId: string): WorkflowDocument {
         launchSurface: 'technician-workspace',
       },
     },
+    errorHandling: buildDefaultWorkflowErrorHandling(),
     nodes: [
       {
         id: 'trigger-start',
@@ -710,6 +730,7 @@ function buildUserOnboardingWorkflow(workflowId: string): WorkflowDocument {
         launchSurface: 'tenant-admin',
       },
     },
+    errorHandling: buildDefaultWorkflowErrorHandling(),
     nodes: [
       {
         id: 'trigger-start',
@@ -796,6 +817,7 @@ function buildStandardsDriftWorkflow(workflowId: string): WorkflowDocument {
         launchSurface: 'technician-workspace',
       },
     },
+    errorHandling: buildDefaultWorkflowErrorHandling(),
     nodes: [
       {
         id: 'trigger-start',
@@ -881,4 +903,7 @@ function buildStandardsDriftWorkflow(workflowId: string): WorkflowDocument {
     },
   };
 }
+
+
+
 

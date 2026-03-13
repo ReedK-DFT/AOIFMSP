@@ -15,6 +15,8 @@ export type WorkflowStatus = 'draft' | 'published' | 'disabled' | 'archived';
 export type WorkflowDesignAssistantMode = 'manual' | 'ai-assisted' | 'mixed';
 export type ExecutionStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'partial';
 export type ExecutionStepStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'skipped' | 'cancelled';
+export type WorkflowEdgeType = 'default' | 'true' | 'false' | 'error' | 'success';
+export type WorkflowErrorStrategy = 'fail-workflow' | 'continue' | 'retry' | 'branch';
 export type WorkflowNodeType =
   | 'trigger'
   | 'connector-action'
@@ -140,14 +142,40 @@ export interface ExecutionStepEntity extends TableEntityAddress, TableSystemFiel
   correlationId: string;
 }
 
+export interface WorkflowNodeGroup {
+  id: string;
+  label: string;
+  description?: string;
+  nodeIds: string[];
+  color?: string;
+  collapsed?: boolean;
+  bounds?: WorkflowCanvasRect;
+}
+
+export interface WorkflowAnnotation {
+  id: string;
+  kind: 'note' | 'step' | 'route';
+  label: string;
+  content?: string;
+  position: WorkflowCanvasPosition;
+  size?: WorkflowCanvasSize;
+  nodeIds?: string[];
+  edgeIds?: string[];
+  groupId?: string;
+  color?: string;
+}
+
 export interface WorkflowDocument {
   schemaVersion: number;
   workflowId: string;
   workflowVersionId?: string | null;
   displayName: string;
   trigger: WorkflowTriggerDefinition;
+  errorHandling: WorkflowErrorHandlingSettings;
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
+  groups?: WorkflowNodeGroup[];
+  annotations?: WorkflowAnnotation[];
   variables: WorkflowVariableDefinition[];
   bindings: WorkflowBindings;
   ai: WorkflowAiMetadata;
@@ -164,14 +192,38 @@ export interface WorkflowCanvasPosition {
   y: number;
 }
 
+export interface WorkflowCanvasSize {
+  width: number;
+  height: number;
+}
+
+export interface WorkflowCanvasRect extends WorkflowCanvasPosition, WorkflowCanvasSize {}
+
 export interface WorkflowEdge {
   id: string;
   sourceNodeId: string;
   sourcePort?: string;
   targetNodeId: string;
   targetPort?: string;
+  edgeType?: WorkflowEdgeType;
   label?: string;
   conditionExpression?: string;
+  annotation?: string;
+}
+
+export interface WorkflowErrorHandlingPolicy {
+  strategy: WorkflowErrorStrategy;
+  maxRetries?: number;
+  retryDelaySeconds?: number;
+  branchTargetNodeId?: string;
+  captureAs?: string;
+  notes?: string;
+}
+
+export interface WorkflowErrorHandlingSettings {
+  defaultNodePolicy: WorkflowErrorHandlingPolicy;
+  onTriggerFailure?: WorkflowErrorHandlingPolicy;
+  onUnhandledError?: WorkflowErrorHandlingPolicy;
 }
 
 export interface WorkflowVariableDefinition {
@@ -202,6 +254,8 @@ export interface WorkflowAiMetadata {
 export interface WorkflowEditorState {
   viewport: JsonObject;
   selectedNodeIds?: string[];
+  selectedGroupIds?: string[];
+  selectedAnnotationIds?: string[];
   sidebarState?: JsonObject;
 }
 
@@ -211,6 +265,8 @@ export interface WorkflowNodeBase {
   label: string;
   position?: WorkflowCanvasPosition;
   disabled?: boolean;
+  documentation?: string;
+  errorHandling?: WorkflowErrorHandlingPolicy;
 }
 
 export interface TriggerWorkflowNode extends WorkflowNodeBase {
@@ -297,3 +353,11 @@ export interface ExecutionStateDocument {
   failedNodeIds: string[];
   correlationId: string;
 }
+
+
+
+
+
+
+
+

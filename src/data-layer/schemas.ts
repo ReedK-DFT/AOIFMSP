@@ -40,11 +40,36 @@ const workflowCanvasPositionSchema = z
   })
   .strict();
 
+const workflowCanvasSizeSchema = z
+  .object({
+    width: z.number().positive(),
+    height: z.number().positive(),
+  })
+  .strict();
+
+const workflowCanvasRectSchema = workflowCanvasPositionSchema.extend({
+  width: z.number().positive(),
+  height: z.number().positive(),
+});
+
+const workflowErrorHandlingPolicySchema = z
+  .object({
+    strategy: z.enum(['fail-workflow', 'continue', 'retry', 'branch']),
+    maxRetries: z.number().int().min(0).optional(),
+    retryDelaySeconds: z.number().int().min(0).optional(),
+    branchTargetNodeId: nonEmptyStringSchema.optional(),
+    captureAs: nonEmptyStringSchema.optional(),
+    notes: z.string().optional(),
+  })
+  .strict();
+
 const workflowNodeBaseSchema = z.object({
   id: nonEmptyStringSchema,
   label: nonEmptyStringSchema,
   position: workflowCanvasPositionSchema.optional(),
   disabled: z.boolean().optional(),
+  documentation: z.string().optional(),
+  errorHandling: workflowErrorHandlingPolicySchema.optional(),
 });
 
 const triggerWorkflowNodeSchema = workflowNodeBaseSchema.extend({
@@ -126,8 +151,10 @@ export const workflowEdgeSchema = z
     sourcePort: nonEmptyStringSchema.optional(),
     targetNodeId: nonEmptyStringSchema,
     targetPort: nonEmptyStringSchema.optional(),
+    edgeType: z.enum(['default', 'true', 'false', 'error', 'success']).optional(),
     label: nonEmptyStringSchema.optional(),
     conditionExpression: nonEmptyStringSchema.optional(),
+    annotation: z.string().optional(),
   })
   .strict();
 
@@ -171,10 +198,47 @@ export const workflowAiMetadataSchema = z
   })
   .strict();
 
+export const workflowNodeGroupSchema = z
+  .object({
+    id: nonEmptyStringSchema,
+    label: nonEmptyStringSchema,
+    description: z.string().optional(),
+    nodeIds: z.array(nonEmptyStringSchema),
+    color: nonEmptyStringSchema.optional(),
+    collapsed: z.boolean().optional(),
+    bounds: workflowCanvasRectSchema.optional(),
+  })
+  .strict();
+
+export const workflowAnnotationSchema = z
+  .object({
+    id: nonEmptyStringSchema,
+    kind: z.enum(['note', 'step', 'route']),
+    label: nonEmptyStringSchema,
+    content: z.string().optional(),
+    position: workflowCanvasPositionSchema,
+    size: workflowCanvasSizeSchema.optional(),
+    nodeIds: z.array(nonEmptyStringSchema).optional(),
+    edgeIds: z.array(nonEmptyStringSchema).optional(),
+    groupId: nonEmptyStringSchema.optional(),
+    color: nonEmptyStringSchema.optional(),
+  })
+  .strict();
+
+export const workflowErrorHandlingSettingsSchema = z
+  .object({
+    defaultNodePolicy: workflowErrorHandlingPolicySchema,
+    onTriggerFailure: workflowErrorHandlingPolicySchema.optional(),
+    onUnhandledError: workflowErrorHandlingPolicySchema.optional(),
+  })
+  .strict();
+
 export const workflowEditorStateSchema = z
   .object({
     viewport: jsonObjectSchema,
     selectedNodeIds: z.array(nonEmptyStringSchema).optional(),
+    selectedGroupIds: z.array(nonEmptyStringSchema).optional(),
+    selectedAnnotationIds: z.array(nonEmptyStringSchema).optional(),
     sidebarState: jsonObjectSchema.optional(),
   })
   .strict();
@@ -186,8 +250,11 @@ export const workflowDocumentSchema = z
     workflowVersionId: z.string().nullable().optional(),
     displayName: nonEmptyStringSchema,
     trigger: workflowTriggerDefinitionSchema,
+    errorHandling: workflowErrorHandlingSettingsSchema,
     nodes: z.array(workflowNodeSchema),
     edges: z.array(workflowEdgeSchema),
+    groups: z.array(workflowNodeGroupSchema).optional(),
+    annotations: z.array(workflowAnnotationSchema).optional(),
     variables: z.array(workflowVariableDefinitionSchema),
     bindings: workflowBindingsSchema,
     ai: workflowAiMetadataSchema,
@@ -412,3 +479,6 @@ export function parseQueueMessage(input: unknown) {
 export function parseKeyVaultSecretPayload(input: unknown) {
   return keyVaultSecretPayloadSchema.parse(input);
 }
+
+
+

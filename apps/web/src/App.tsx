@@ -1,5 +1,6 @@
 import { startTransition, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
+import type { WorkflowDocument, WorkflowNode } from '../../../src/data-layer/workflows';
 
 import {
   createConnection,
@@ -11,9 +12,11 @@ import {
   fetchTechnicianHome,
   fetchTenantDetail,
   fetchTenants,
+  fetchWorkflowDetail,
   fetchWorkflows,
   importConnector,
   previewConnectorImport,
+  saveWorkflowDraft,
   type BootstrapContextResponse,
   type ConnectionListItem,
   type ConnectorCatalogResponse,
@@ -26,9 +29,12 @@ import {
   type TechnicianHomeResponse,
   type TenantDetailResponse,
   type TenantListResponse,
+  type WorkflowAvailableAction,
+  type WorkflowDetailResponse,
   type WorkflowListResponse,
 } from './api';
 import {
+  getMockWorkflowDetail,
   mockBootstrapContext,
   mockConnectorCatalog,
   mockConnectorDetails,
@@ -48,6 +54,7 @@ import {
   TechnicianWorkspace,
   WorkflowStudio,
 } from './components/surfaces';
+import type { WorkflowSceneSnapshot } from './components/workflow-designer';
 import { ConnectorStudio } from './components/connector-studio';
 
 const fallbackBootstrap = mockBootstrapContext as BootstrapContextResponse;
@@ -58,11 +65,20 @@ const fallbackTenants = mockTenants as TenantListResponse;
 const fallbackTenantDetail = mockTenantDetails.tenant_northwind as TenantDetailResponse;
 const fallbackConnectorCatalog = mockConnectorCatalog as ConnectorCatalogResponse;
 const fallbackConnectorDetail = mockConnectorDetails.connector_graph as ConnectorDetailResponse;
+const fallbackWorkflowDetail = getMockWorkflowDetail('wf_demo_ticket_triage') as WorkflowDetailResponse;
+
+type ToolbarAction = {
+  id: string;
+  label: string;
+  emphasis: 'primary' | 'secondary';
+  disabled?: boolean;
+};
 
 const MIN_LEFT_WIDTH = 220;
 const MAX_LEFT_WIDTH = 420;
 const MIN_RIGHT_WIDTH = 260;
 const MAX_RIGHT_WIDTH = 460;
+const WORKFLOW_GRID_SIZE = 24;
 const MIN_MAIN_WIDTH = 560;
 
 export type SurfaceId = 'technician-workspace' | 'workflow-designer' | 'tenant-administration' | 'connectors';
@@ -180,11 +196,229 @@ function upsertConnectionInDetail(detail: ConnectorDetailResponse, connection: C
   };
 }
 
+function clampWorkflowZoom(value: number): number {
+  return clamp(value, 0.55, 1.4);
+}
+
+function selectedNodeIdFromDraft(draft: WorkflowDocument | null): string | null {
+  return draft?.editor.selectedNodeIds?.[0] ?? draft?.nodes[0]?.id ?? null;
+}
+
+function applySelectionToDraft(draft: WorkflowDocument, nodeId: string | null): WorkflowDocument {
+  return {
+    ...draft,
+    editor: {
+      ...draft.editor,
+      selectedNodeIds: nodeId ? [nodeId] : [],
+    },
+  };
+}
+
+function updateWorkflowListItem(items: WorkflowListResponse, detail: WorkflowDetailResponse): WorkflowListResponse {
+  const nextItems = [...items.items];
+  const existingIndex = nextItems.findIndex((item) => item.id === detail.workflow.id);
+
+  if (existingIndex >= 0) {
+    const currentItem = nextItems[existingIndex]!;
+    nextItems[existingIndex] = {
+      ...currentItem,
+      displayName: detail.workflow.displayName,
+      ...(detail.workflow.description ? { description: detail.workflow.description } : {}),
+      status: detail.workflow.status,
+      designAssistantMode: detail.workflow.designAssistantMode,
+    };
+  }
+
+  return {
+    ...items,
+    items: nextItems,
+  };
+}
+
+function createNodeId(prefix: string): string {
+  return `${prefix}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function snapWorkflowCoordinate(value: number) {
+  return Math.round(value / WORKFLOW_GRID_SIZE) * WORKFLOW_GRID_SIZE;
+}
+
+function buildDefaultNodeErrorHandling() {
+  return {
+    strategy: 'retry' as const,
+    maxRetries: 1,
+    retryDelaySeconds: 15,
+    captureAs: 'nodeError',
+  };
+}
+
+function getNextNodePosition(draft: WorkflowDocument, selectedNodeId: string | null) {
+  const selectedNode = draft.nodes.find((node) => node.id === selectedNodeId);
+
+  if (selectedNode?.position) {
+    return {
+      x: snapWorkflowCoordinate(selectedNode.position.x + 272),
+      y: snapWorkflowCoordinate(selectedNode.position.y),
+    };
+  }
+
+  const furthestX = draft.nodes.reduce((max, node) => Math.max(max, node.position?.x ?? 0), 48);
+  return {
+    x: snapWorkflowCoordinate(furthestX + 272),
+    y: snapWorkflowCoordinate(120),
+  };
+}
+
+function insertNodeIntoDraft(draft: WorkflowDocument, selectedNodeId: string | null, nextNode: WorkflowNode): WorkflowDocument {
+  const selectedNode = draft.nodes.find((node) => node.id === selectedNodeId);
+  const nextNodes = [...draft.nodes, nextNode];
+
+  if (!selectedNode) {
+    return applySelectionToDraft({
+      ...draft,
+      nodes: nextNodes,
+    }, nextNode.id);
+  }
+
+  const outgoingEdges = draft.edges.filter((edge) => edge.sourceNodeId === selectedNode.id);
+  let nextEdges = [...draft.edges];
+
+  if (outgoingEdges.length === 1) {
+    const existingEdge = outgoingEdges[0]!;
+    nextEdges = nextEdges.map((edge) =>
+      edge.id === existingEdge.id
+        ? {
+            ...edge,
+            targetNodeId: nextNode.id,
+          }
+        : edge,
+    );
+    nextEdges.push({
+      id: createNodeId('edge'),
+      sourceNodeId: nextNode.id,
+      targetNodeId: existingEdge.targetNodeId,
+      ...(existingEdge.conditionExpression ? { conditionExpression: existingEdge.conditionExpression } : {}),
+    });
+  } else {
+    nextEdges.push({
+      id: createNodeId('edge'),
+      sourceNodeId: selectedNode.id,
+      targetNodeId: nextNode.id,
+    });
+  }
+
+  return applySelectionToDraft(
+    {
+      ...draft,
+      nodes: nextNodes,
+      edges: nextEdges,
+    },
+    nextNode.id,
+  );
+}
+
+function createBuiltInNode(
+  nodeType: 'condition' | 'javascript' | 'ai-agent' | 'variable',
+  draft: WorkflowDocument,
+  selectedNodeId: string | null,
+): WorkflowNode {
+  const position = getNextNodePosition(draft, selectedNodeId);
+
+  if (nodeType === 'condition') {
+    return {
+      id: createNodeId('condition'),
+      type: 'condition',
+      label: 'Decision Gate',
+      expression: 'true',
+      position,
+      errorHandling: buildDefaultNodeErrorHandling(),
+    };
+  }
+
+  if (nodeType === 'javascript') {
+    return {
+      id: createNodeId('script'),
+      type: 'javascript',
+      label: 'Custom JavaScript',
+      inlineScript: 'return { ok: true };',
+      timeoutSeconds: 20,
+      position,
+      errorHandling: buildDefaultNodeErrorHandling(),
+    };
+  }
+
+  if (nodeType === 'variable') {
+    return {
+      id: createNodeId('variable'),
+      type: 'variable',
+      label: 'Set Variable',
+      variableName: 'draftValue',
+      valueExpression: '',
+      position,
+      errorHandling: buildDefaultNodeErrorHandling(),
+    };
+  }
+
+  return {
+    id: createNodeId('agent'),
+    type: 'ai-agent',
+    label: 'Foundry Agent Step',
+    agentId: 'agent_foundry_assist',
+    agentVersionId: 'v1',
+    foundryProjectRef: 'foundry-default',
+    operatingMode: 'suggest-only',
+    inputTemplate: {
+      source: 'workflow-context',
+    },
+    outputSchema: {
+      summary: 'string',
+    },
+    approvalPolicy: {
+      required: false,
+    },
+    timeoutSeconds: 45,
+    maxRetries: 1,
+    position,
+    errorHandling: buildDefaultNodeErrorHandling(),
+  };
+}
+
+function createActionNode(action: WorkflowAvailableAction, draft: WorkflowDocument, selectedNodeId: string | null): WorkflowNode {
+  return {
+    id: createNodeId('action'),
+    type: 'connector-action',
+    label: action.displayName,
+    connectorId: action.connectorId,
+    connectorVersionId: action.connectorVersionId,
+    actionId: action.actionId,
+    connectionId: action.suggestedConnectionIds[0] ?? '',
+    inputs: {},
+    position: getNextNodePosition(draft, selectedNodeId),
+    errorHandling: buildDefaultNodeErrorHandling(),
+  };
+}
+
 export function App() {
   const frameRef = useRef<HTMLElement | null>(null);
   const [bootstrap, setBootstrap] = useState<BootstrapContextResponse>(fallbackBootstrap);
   const [session, setSession] = useState<SessionResponse>(fallbackSession);
   const [workflows, setWorkflows] = useState<WorkflowListResponse>(fallbackWorkflows);
+  const [workflowDetail, setWorkflowDetail] = useState<WorkflowDetailResponse>(fallbackWorkflowDetail);
+  const [workflowDraft, setWorkflowDraft] = useState<WorkflowDocument>(fallbackWorkflowDetail.draft);
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState(fallbackWorkflowDetail.workflow.id);
+  const [selectedWorkflowNodeId, setSelectedWorkflowNodeId] = useState<string | null>(selectedNodeIdFromDraft(fallbackWorkflowDetail.draft));
+  const [workflowDirty, setWorkflowDirty] = useState(false);
+  const [workflowSceneState, setWorkflowSceneState] = useState<WorkflowSceneSnapshot>({
+    workflowId: fallbackWorkflowDetail.workflow.id,
+    workflowDisplayName: fallbackWorkflowDetail.workflow.displayName,
+    selectedNodeId: selectedNodeIdFromDraft(fallbackWorkflowDetail.draft),
+    selectedNodeLabel: fallbackWorkflowDetail.draft.nodes.find((node) => node.id === selectedNodeIdFromDraft(fallbackWorkflowDetail.draft))?.label,
+    selectedNodeType: fallbackWorkflowDetail.draft.nodes.find((node) => node.id === selectedNodeIdFromDraft(fallbackWorkflowDetail.draft))?.type,
+    nodeCount: fallbackWorkflowDetail.draft.nodes.length,
+    edgeCount: fallbackWorkflowDetail.draft.edges.length,
+    zoom: Number(fallbackWorkflowDetail.draft.editor.viewport.zoom ?? 1),
+    isDirty: false,
+  });
   const [technicianHome, setTechnicianHome] = useState<TechnicianHomeResponse>(fallbackTechnicianHome);
   const [tenants, setTenants] = useState<TenantListResponse>(fallbackTenants);
   const [tenantDetail, setTenantDetail] = useState<TenantDetailResponse>(fallbackTenantDetail);
@@ -216,6 +450,22 @@ export function App() {
     root.style.setProperty('--hero-secondary', rgba(secondary, 0.18));
     root.style.setProperty('--brand-ring', rgba(primary, 0.2));
   }, [bootstrap.branding]);
+  const loadWorkflowDetail = useEffectEvent(async (workflowId: string, mspTenantId: string) => {
+    setBusyIntent(`workflow:${workflowId}`);
+
+    try {
+      const detail = await fetchWorkflowDetail(workflowId, mspTenantId);
+      startTransition(() => {
+        setWorkflowDetail(detail);
+        setWorkflowDraft(detail.draft);
+        setSelectedWorkflowId(detail.workflow.id);
+        setSelectedWorkflowNodeId(selectedNodeIdFromDraft(detail.draft));
+        setWorkflowDirty(false);
+      });
+    } finally {
+      setBusyIntent((current) => (current === `workflow:${workflowId}` ? null : current));
+    }
+  });
 
   useEffect(() => {
     let isMounted = true;
@@ -244,6 +494,9 @@ export function App() {
         const preferredConnectorId = connectorResponse.connectors[0]?.id ?? fallbackConnectorDetail.connector.id;
         const connectorDetailResponse = await fetchConnectorDetail(preferredConnectorId, connectorResponse.mspTenantId);
         const preferredSurface = normalizeSurfaceId(sessionResponse.operator.preferredStartSurface);
+        const preferredWorkflowId =
+          technicianResponse.highlightedTicket?.recommendedWorkflowIds[0] ?? workflowResponse.items[0]?.id ?? fallbackWorkflowDetail.workflow.id;
+        const workflowDetailResponse = await fetchWorkflowDetail(preferredWorkflowId, workflowResponse.mspTenantId);
 
         if (!isMounted) {
           return;
@@ -253,6 +506,11 @@ export function App() {
           setBootstrap(bootstrapResponse);
           setSession(sessionResponse);
           setWorkflows(workflowResponse);
+          setWorkflowDetail(workflowDetailResponse);
+          setWorkflowDraft(workflowDetailResponse.draft);
+          setSelectedWorkflowId(workflowDetailResponse.workflow.id);
+          setSelectedWorkflowNodeId(selectedNodeIdFromDraft(workflowDetailResponse.draft));
+          setWorkflowDirty(false);
           setTechnicianHome(technicianResponse);
           setTenants(tenantResponse);
           setTenantDetail(tenantDetailResponse);
@@ -276,7 +534,7 @@ export function App() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [loadWorkflowDetail]);
 
   useEffect(() => {
     if (activeSurface === visibleSurface) {
@@ -451,6 +709,107 @@ export function App() {
     }
   });
 
+  const handleSelectWorkflow = useEffectEvent(async (workflowId: string) => {
+    await loadWorkflowDetail(workflowId, workflows.mspTenantId);
+    setActiveSurface('workflow-designer');
+  });
+
+  const handleWorkflowDraftChange = useEffectEvent((nextDraft: WorkflowDocument) => {
+    startTransition(() => {
+      setWorkflowDraft(nextDraft);
+      setWorkflowDirty(true);
+    });
+  });
+
+  const handleWorkflowSelectNode = useEffectEvent((nodeId: string | null) => {
+    setSelectedWorkflowNodeId(nodeId);
+  });
+
+  const handleWorkflowZoomChange = useEffectEvent((zoom: number) => {
+    setWorkflowDraft((current) => ({
+      ...current,
+      editor: {
+        ...current.editor,
+        viewport: {
+          ...current.editor.viewport,
+          zoom: clampWorkflowZoom(zoom),
+        },
+      },
+    }));
+    setWorkflowDirty(true);
+  });
+
+  const handleInsertBuiltInNode = useEffectEvent((nodeType: 'condition' | 'javascript' | 'ai-agent' | 'variable') => {
+    setWorkflowDraft((current) => {
+      const nextNode = createBuiltInNode(nodeType, current, selectedWorkflowNodeId);
+      const nextDraft = insertNodeIntoDraft(current, selectedWorkflowNodeId, nextNode);
+      setSelectedWorkflowNodeId(nextNode.id);
+      return nextDraft;
+    });
+    setWorkflowDirty(true);
+    setActiveSurface('workflow-designer');
+  });
+
+  const handleInsertActionNode = useEffectEvent((action: WorkflowAvailableAction) => {
+    setWorkflowDraft((current) => {
+      const nextNode = createActionNode(action, current, selectedWorkflowNodeId);
+      const nextDraft = insertNodeIntoDraft(current, selectedWorkflowNodeId, nextNode);
+      setSelectedWorkflowNodeId(nextNode.id);
+      return nextDraft;
+    });
+    setWorkflowDirty(true);
+    setActiveSurface('workflow-designer');
+  });
+
+  const handleSaveWorkflow = useEffectEvent(async () => {
+    setBusyIntent('save-workflow');
+
+    try {
+      const detail = await saveWorkflowDraft(
+        workflowDetail.workflow.id,
+        {
+          draft: applySelectionToDraft(workflowDraft, selectedWorkflowNodeId),
+          displayName: workflowDraft.displayName,
+          description: workflowDetail.workflow.description,
+        },
+        workflows.mspTenantId,
+      );
+
+      startTransition(() => {
+        setWorkflowDetail(detail);
+        setWorkflowDraft(detail.draft);
+        setSelectedWorkflowId(detail.workflow.id);
+        setSelectedWorkflowNodeId(selectedNodeIdFromDraft(detail.draft));
+        setWorkflowDirty(false);
+        setWorkflows((current) => updateWorkflowListItem(current, detail));
+      });
+    } finally {
+      setBusyIntent(null);
+    }
+  });
+
+  const handleToolbarAction = useEffectEvent((actionId: string) => {
+    if (visibleSurface === 'workflow-designer') {
+      if (actionId === 'draft-ai') {
+        handleInsertBuiltInNode('ai-agent');
+        return;
+      }
+
+      if (actionId === 'add-block') {
+        handleInsertBuiltInNode('condition');
+        return;
+      }
+
+      if (actionId === 'publish') {
+        void handleSaveWorkflow();
+        return;
+      }
+    }
+
+    if (visibleSurface === 'technician-workspace' && actionId === 'guided-action') {
+      setActiveSurface('workflow-designer');
+    }
+  });
   const activeTenant = tenants.items.find((item) => item.id === tenantDetail.tenant.id) ?? tenants.items[0];
   const visibleNavigation = bootstrap.navigation.find((item) => item.id === visibleSurface) ?? bootstrap.navigation[0];
   const apiMode = currentApiMode();
@@ -461,34 +820,34 @@ export function App() {
         : 'Live platform shell'
       : 'Fallback shell';
 
-  const toolbarActions = useMemo(() => {
+  const toolbarActions = useMemo<ToolbarAction[]>(() => {
     switch (visibleSurface) {
       case 'workflow-designer':
         return [
-          { id: 'draft-ai', label: 'Draft With AI', emphasis: 'primary' as const },
-          { id: 'add-block', label: 'Add Block', emphasis: 'secondary' as const },
-          { id: 'publish', label: 'Publish Draft', emphasis: 'secondary' as const },
+          { id: 'draft-ai', label: 'Add Agent Step', emphasis: 'primary' },
+          { id: 'add-block', label: 'Add Logic Block', emphasis: 'secondary' },
+          { id: 'publish', label: workflowDirty ? 'Save Draft' : 'Draft Saved', emphasis: 'secondary', disabled: !workflowDirty },
         ];
       case 'tenant-administration':
         return [
-          { id: 'add-user', label: 'Add User', emphasis: 'primary' as const },
-          { id: 'assign-license', label: 'Assign License', emphasis: 'secondary' as const },
-          { id: 'review-drift', label: 'Review Drift', emphasis: 'secondary' as const },
+          { id: 'add-user', label: 'Add User', emphasis: 'primary' },
+          { id: 'assign-license', label: 'Assign License', emphasis: 'secondary' },
+          { id: 'review-drift', label: 'Review Drift', emphasis: 'secondary' },
         ];
       case 'connectors':
         return [
-          { id: 'preview-import', label: 'Preview Import', emphasis: 'primary' as const },
-          { id: 'import-connector', label: 'Import Connector', emphasis: 'secondary' as const },
-          { id: 'create-connection', label: 'Add Connection', emphasis: 'secondary' as const },
+          { id: 'preview-import', label: 'Preview Import', emphasis: 'primary' },
+          { id: 'import-connector', label: 'Import Connector', emphasis: 'secondary' },
+          { id: 'create-connection', label: 'Add Connection', emphasis: 'secondary' },
         ];
       default:
         return [
-          { id: 'guided-action', label: 'Launch Guided Action', emphasis: 'primary' as const },
-          { id: 'open-ticket', label: 'Open Ticket', emphasis: 'secondary' as const },
-          { id: 'open-tenant', label: 'Open Tenant', emphasis: 'secondary' as const },
+          { id: 'guided-action', label: 'Launch Guided Action', emphasis: 'primary' },
+          { id: 'open-ticket', label: 'Open Ticket', emphasis: 'secondary' },
+          { id: 'open-tenant', label: 'Open Tenant', emphasis: 'secondary' },
         ];
     }
-  }, [visibleSurface]);
+  }, [visibleSurface, workflowDirty]);
 
   const launcherCommands = useMemo<LauncherCommand[]>(() => {
     const baseCommands = bootstrap.navigation.map((item) => ({
@@ -552,6 +911,7 @@ export function App() {
         activeNavigation={visibleNavigation}
         actions={toolbarActions}
         activeTenant={activeTenant}
+        onAction={handleToolbarAction}
       />
 
       <main ref={frameRef} className="surface-frame" style={frameStyle}>
@@ -564,6 +924,8 @@ export function App() {
           connectorDetail={connectorDetail}
           connectorPreview={connectorPreview?.preview ?? null}
           busyIntent={busyIntent}
+          workflowDetail={workflowDetail}
+          workflowSceneState={workflowSceneState}
         />
 
         <button
@@ -590,9 +952,21 @@ export function App() {
             {visibleSurface === 'technician-workspace' ? <TechnicianWorkspace home={technicianHome} /> : null}
             {visibleSurface === 'workflow-designer' ? (
               <WorkflowStudio
-                recommendations={bootstrap.recommendedWorkflows}
+                detail={workflowDetail}
+                draft={workflowDraft}
                 workflows={workflows.items}
                 highlightedTicket={technicianHome.highlightedTicket}
+                busyIntent={busyIntent}
+                selectedNodeId={selectedWorkflowNodeId}
+                isDirty={workflowDirty}
+                onSelectWorkflow={(workflowId) => void handleSelectWorkflow(workflowId)}
+                onSelectNode={handleWorkflowSelectNode}
+                onDraftChange={handleWorkflowDraftChange}
+                onSave={() => void handleSaveWorkflow()}
+                onInsertBuiltInNode={handleInsertBuiltInNode}
+                onInsertActionNode={handleInsertActionNode}
+                onZoomChange={handleWorkflowZoomChange}
+                onSceneStateChange={setWorkflowSceneState}
               />
             ) : null}
             {visibleSurface === 'tenant-administration' ? (

@@ -1,5 +1,7 @@
+import type { WorkflowDocument } from '../../../src/data-layer/workflows';
 import {
   createMockConnection,
+  getMockWorkflowDetail,
   importMockConnector,
   mockBootstrapContext,
   mockConnectorCatalog,
@@ -10,6 +12,7 @@ import {
   mockTenants,
   mockWorkflows,
   previewMockConnectorImport,
+  saveMockWorkflowDraft,
 } from './mock-data';
 
 export interface NavigationItem {
@@ -63,6 +66,40 @@ export interface WorkflowListItem {
 export interface WorkflowListResponse {
   mspTenantId: string;
   items: WorkflowListItem[];
+}
+
+export interface WorkflowAvailableAction {
+  id: string;
+  connectorId: string;
+  connectorDisplayName: string;
+  connectorVersionId: string;
+  actionId: string;
+  displayName: string;
+  category?: string | undefined;
+  method: string;
+  pathTemplate: string;
+  summary?: string | undefined;
+  isTriggerCapable: boolean;
+  suggestedConnectionIds: string[];
+}
+
+export interface WorkflowDetailResponse {
+  mspTenantId: string;
+  workflow: WorkflowListItem & {
+    defaultClientTenantId?: string | undefined;
+    triggerModeSummary?: string | undefined;
+    lastRunAt?: string | undefined;
+    lastRunStatus?: string | undefined;
+  };
+  draft: WorkflowDocument;
+  availableActions: WorkflowAvailableAction[];
+  availableConnections: ConnectionListItem[];
+}
+
+export interface SaveWorkflowDraftRequest {
+  draft: WorkflowDocument;
+  displayName?: string | undefined;
+  description?: string | undefined;
 }
 
 export interface SessionResponse {
@@ -443,6 +480,38 @@ export function fetchWorkflows(mspTenantId = 'msp_demo'): Promise<WorkflowListRe
   return readJson(buildApiUrl(`/api/workflows?mspTenantId=${encodeURIComponent(mspTenantId)}`));
 }
 
+export function fetchWorkflowDetail(workflowId: string, mspTenantId = 'msp_demo'): Promise<WorkflowDetailResponse> {
+  if (apiMode === 'mock') {
+    return delay(getMockWorkflowDetail(workflowId, mspTenantId) as WorkflowDetailResponse);
+  }
+
+  return readJson(buildApiUrl(`/api/workflows/${encodeURIComponent(workflowId)}?mspTenantId=${encodeURIComponent(mspTenantId)}`));
+}
+
+export function saveWorkflowDraft(
+  workflowId: string,
+  request: SaveWorkflowDraftRequest,
+  mspTenantId = 'msp_demo',
+): Promise<WorkflowDetailResponse> {
+  if (apiMode === 'mock') {
+    return delay(saveMockWorkflowDraft(workflowId, request, mspTenantId) as WorkflowDetailResponse);
+  }
+
+  return fetch(buildApiUrl(`/api/workflows/${encodeURIComponent(workflowId)}?mspTenantId=${encodeURIComponent(mspTenantId)}`), {
+    method: 'PUT',
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+    },
+    body: JSON.stringify(request),
+  }).then(async (response) => {
+    if (!response.ok) {
+      throw new Error(`Failed request: ${response.status}`);
+    }
+
+    return (await response.json()) as WorkflowDetailResponse;
+  });
+}
+
 export function fetchTechnicianHome(mspTenantId = 'msp_demo'): Promise<TechnicianHomeResponse> {
   if (apiMode === 'mock') {
     return delay({ ...mockTechnicianHome, mspTenantId } as TechnicianHomeResponse);
@@ -519,4 +588,6 @@ export function createConnection(request: CreateConnectionRequest): Promise<Conn
 export function currentApiMode(): ApiMode {
   return apiMode;
 }
+
+
 
