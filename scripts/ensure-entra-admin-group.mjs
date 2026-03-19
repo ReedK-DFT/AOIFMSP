@@ -23,7 +23,7 @@ async function main() {
   const adminUser = await resolveAdminUser(token);
 
   if (adminUser) {
-    await ensureGroupMember(token, group.id, adminUser.id);
+    await ensureGroupMember(token, group.id, adminUser.id, group.createdByScript === true);
   }
 
   process.stdout.write(
@@ -40,15 +40,22 @@ async function ensureAdminGroup(token) {
   const existing = await graphRequest(
     token,
     `https://graph.microsoft.com/v1.0/groups?$filter=${encodeURIComponent(`displayName eq '${escapeFilterValue(groupDisplayName)}'`)}&$select=id,displayName`,
+    {
+      operation: 'lookup_admin_group',
+    },
   );
   const current = Array.isArray(existing.value) ? existing.value[0] : null;
 
   if (current) {
-    return current;
+    return {
+      ...current,
+      createdByScript: false,
+    };
   }
 
-  return graphRequest(token, 'https://graph.microsoft.com/v1.0/groups', {
+  const created = await graphRequest(token, 'https://graph.microsoft.com/v1.0/groups', {
     method: 'POST',
+    operation: 'create_admin_group',
     body: {
       displayName: groupDisplayName,
       description: 'AOIFMSP platform administrators in the MSP tenant.',
@@ -57,6 +64,11 @@ async function ensureAdminGroup(token) {
       securityEnabled: true,
     },
   });
+
+  return {
+    ...created,
+    createdByScript: true,
+  };
 }
 
 async function resolveAdminUser(token) {
@@ -65,30 +77,51 @@ async function resolveAdminUser(token) {
   }
 
   if (adminObjectId) {
-    return graphRequest(token, `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(adminObjectId)}?$select=id,userPrincipalName`);
+    return graphRequest(token, `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(adminObjectId)}?$select=id,userPrincipalName`, {
+      operation: 'resolve_bootstrap_admin_by_object_id',
+    });
   }
 
-  return graphRequest(token, `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(adminUserPrincipalName)}?$select=id,userPrincipalName`);
+  return graphRequest(token, `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(adminUserPrincipalName)}?$select=id,userPrincipalName`, {
+    operation: 'resolve_bootstrap_admin_by_upn',
+  });
 }
 
-async function ensureGroupMember(token, groupId, userId) {
-  try {
-    await graphRequest(token, `https://graph.microsoft.com/v1.0/groups/${encodeURIComponent(groupId)}/members/$ref`, {
-      method: 'POST',
-      body: {
-        '@odata.id': `https://graph.microsoft.com/v1.0/directoryObjects/${userId}`,
-      },
-      allowNoContent: true,
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : '';
+async function ensureGroupMember(token, groupId, userId, shouldRetryForPropagation) {
+  const maxAttempts = shouldRetryForPropagation ? 6 : 1;
+  let lastError = null;
 
-    if (message.includes('added object references already exist')) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      await graphRequest(token, `https://graph.microsoft.com/v1.0/groups/${encodeURIComponent(groupId)}/members/$ref`, {
+        method: 'POST',
+        operation: 'add_bootstrap_admin_to_group',
+        body: {
+          '@odata.id': `https://graph.microsoft.com/v1.0/directoryObjects/${userId}`,
+        },
+        allowNoContent: true,
+      });
       return;
-    }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
 
-    throw error;
+      if (message.includes('added object references already exist')) {
+        return;
+      }
+
+      const isNotFound = message.includes('graph_request_failed:add_bootstrap_admin_to_group:404');
+      if (!isNotFound || attempt === maxAttempts) {
+        lastError = error;
+        break;
+      }
+
+      await sleep(attempt * 2000);
+    }
   }
+
+  throw lastError instanceof Error
+    ? new Error(`${lastError.message}:groupId=${groupId}:userId=${userId}`)
+    : lastError;
 }
 
 async function graphRequest(token, url, options = {}) {
@@ -107,7 +140,7 @@ async function graphRequest(token, url, options = {}) {
 
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(`graph_request_failed:${response.status}:${body}`);
+    throw new Error(`graph_request_failed:${options.operation ?? 'unknown'}:${response.status}:${body}`);
   }
 
   return response.json();
@@ -115,6 +148,12 @@ async function graphRequest(token, url, options = {}) {
 
 function escapeFilterValue(value) {
   return value.replace(/'/g, "''");
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 main().catch((error) => {

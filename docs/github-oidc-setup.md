@@ -139,6 +139,52 @@ Check all of these:
 - The environment name is `production`.
 - You did not accidentally create a branch-based subject instead.
 
+### Graph returns Authorization_RequestDenied during AOIFMSP admin bootstrap
+
+If the workflow reaches `scripts/ensure-entra-admin-group.mjs` and fails with:
+
+```text
+graph_request_failed:403:{"error":{"code":"Authorization_RequestDenied" ... }}
+```
+
+then Azure login is already working. The failure is now Microsoft Graph authorization.
+
+For this script, the deployment app needs Microsoft Graph **application** permissions that can:
+
+- read the bootstrap user, and
+- create the `AOIFMSP Admins` group and add the user as a member.
+
+For AOIFMSP, grant at least:
+
+- `Group.ReadWrite.All` (Application)
+- `User.Read.All` (Application)
+
+Then select **Grant admin consent** for the tenant.
+
+After adding permissions and granting consent, wait a few minutes and rerun the workflow.
+
+### Graph returns Request_ResourceNotFound during AOIFMSP admin bootstrap
+
+If the workflow reaches `scripts/ensure-entra-admin-group.mjs` and fails with a 404 like:
+
+```text
+graph_request_failed:add_bootstrap_admin_to_group:404:...
+```
+
+then the deployment app can already sign in and call Graph, but one of these objects is not available to the membership operation yet:
+
+- the `AOIFMSP Admins` group was just created and has not fully propagated yet
+- the bootstrap user does not exist in the MSP tenant as the object you expected
+- the bootstrap value was supplied as a UPN/email, but the actual tenant object is a different guest or member identity
+
+What to do:
+
+1. Rerun the workflow once, because a just-created group can take a short time to propagate.
+2. If it fails again, look in Microsoft Entra and confirm `AOIFMSP Admins` exists.
+3. Confirm the bootstrap admin exists in the MSP tenant as a user object.
+4. If the user is a guest/B2B identity, prefer supplying the **Object ID** instead of a friendly email/UPN.
+5. Confirm the user object is the one that should be added to the group in the MSP tenant, not only in another tenant.
+
 ### Azure login works, but later deployment steps fail
 
 That usually means:
