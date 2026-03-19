@@ -19,6 +19,7 @@ The recommended onboarding path is the GitHub Pages documentation site, which is
 
 - GitHub Pages deployment guide: published from the `Deploy Docs Site` workflow
 - Direct docs source: [docs/deployment-preparation.md](docs/deployment-preparation.md)
+- OIDC setup: [docs/github-oidc-setup.md](docs/github-oidc-setup.md)
 - Deployment workflow details: [docs/deployment-automation.md](docs/deployment-automation.md)
 
 If you are using a fork, make sure GitHub Pages in that fork is configured to deploy from `GitHub Actions`. The docs workflow now publishes from either `master` or `main`.
@@ -65,6 +66,7 @@ At a high level:
 See:
 
 - [docs/deployment-preparation.md](docs/deployment-preparation.md)
+- [docs/github-oidc-setup.md](docs/github-oidc-setup.md)
 - [docs/deployment-automation.md](docs/deployment-automation.md)
 - [docs/security-baseline.md](docs/security-baseline.md)
 

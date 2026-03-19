@@ -11,8 +11,9 @@ This document defines that operating model. The recommended public starting poin
 1. GitHub Pages deployment guide for the MSP-facing onboarding experience
 2. [README.md](../README.md) for the standard repo overview
 3. [deployment-preparation.md](./deployment-preparation.md) for MSP readiness and required inputs
-4. This document for the GitHub Actions deployment model
-5. [security-baseline.md](./security-baseline.md) for production hardening expectations
+4. [github-oidc-setup.md](./github-oidc-setup.md) for the exact Azure trust setup
+5. This document for the GitHub Actions deployment model
+6. [security-baseline.md](./security-baseline.md) for production hardening expectations
 
 ## Deployment Goal
 
@@ -48,7 +49,7 @@ GitHub Actions cannot deploy to Azure until the repo has an Azure identity it ca
 That means each MSP still needs one one-time bootstrap step outside the main deployment workflow:
 
 - Create a Microsoft Entra application or user-assigned managed identity for GitHub Actions
-- Add a federated identity credential that trusts the GitHub repo and branch or environment
+- Add a federated identity credential that trusts the GitHub repo and environment
 - Grant Azure RBAC to that deployment identity
 - Store the identity details in GitHub repository or environment secrets
 
@@ -61,6 +62,9 @@ Preferred model:
 - GitHub Actions OIDC with `azure/login`
 - No long-lived Azure client secret stored in GitHub
 - One deployment identity per MSP-owned AOIFMSP deployment repo or environment
+- A federated credential for the GitHub environment named `production`
+
+For this repository's `Deploy Platform` workflow, the expected federated subject is `repo:OWNER/REPO:environment:production`. Replace `OWNER/REPO` with the actual fork or repository running the workflow.
 
 Required GitHub secrets:
 
@@ -82,7 +86,6 @@ To let the workflow create resources, assign RBAC, and publish frontend assets, 
 - `User Access Administrator` or equivalent role-assignment permission on the same scope
 
 The infrastructure deployment then assigns the identity `Storage Blob Data Contributor` on the AOIFMSP storage account so GitHub Actions can publish the static frontend without storage keys.
-
 
 ## Microsoft Entra Bootstrap For AOIFMSP Admins
 
@@ -109,6 +112,7 @@ Required Microsoft Graph application permissions for the GitHub deployment ident
 Depending on the tenant's Graph governance posture, `Directory.Read.All` or stronger delegated review may also be needed for troubleshooting or future role/bootstrap expansion.
 
 These permissions are part of the one-time repo bootstrap for deployment automation, not a per-run manual step.
+
 ## Runtime Identity Model
 
 The deployed Function App uses a system-assigned managed identity.
@@ -208,7 +212,7 @@ Logo inputs should point to files committed in the cloned repo, for example `bra
 For a typical MSP first deployment:
 
 1. Clone or fork the repo into an MSP-owned GitHub organization or repository.
-2. Configure GitHub OIDC trust to Azure for the deployment identity.
+2. Follow [github-oidc-setup.md](./github-oidc-setup.md) exactly to create the deployment app, service principal, federated credential, RBAC, Graph permissions, and GitHub `production` environment secrets.
 3. Add the required GitHub secrets.
 4. Commit any logo assets you want to use in the branded shell.
 5. Run `Deploy Platform` with the MSP name, abbreviation, colors, bootstrap admin identity, and Azure environment inputs.
@@ -254,4 +258,3 @@ Use the current workflow to deploy into the test tenant, then add:
 1. post-deploy health and seed validation checks
 2. expand Microsoft Entra bootstrap from the AOIFMSP Admins group into full app-role and group-to-role seeding
 3. production-grade private networking modules
-

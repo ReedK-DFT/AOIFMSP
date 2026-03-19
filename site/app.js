@@ -29,6 +29,11 @@ const faqItems = [
       "Yes. Each MSP still needs a one-time bootstrap step to configure GitHub OIDC trust to Azure and grant the deployment identity the Azure and Microsoft Graph permissions needed for deployment and AOIFMSP admin bootstrap.",
   },
   {
+    question: "What does AADSTS70025 mean?",
+    answer:
+      "It means the Azure app registration exists, but it does not yet trust the GitHub workflow that is trying to sign in. For this repo, the easiest fix is to add a federated credential for the GitHub Actions environment named `production`.",
+  },
+  {
     question: "Should my first deployment be production?",
     answer:
       "Usually no. The recommended first deployment is a test environment so the MSP can validate branding, AOIFMSP admin bootstrap, connector imports, and live backend behavior before hardening the production posture.",
@@ -124,24 +129,35 @@ const state = {
   },
 };
 
-function getGithubRepoBase() {
+function getRepoContext() {
   const hostname = window.location.hostname;
   const pathParts = window.location.pathname.split("/").filter(Boolean);
   if (hostname.endsWith("github.io") && pathParts.length > 0) {
-    const owner = hostname.split(".")[0];
-    const repo = pathParts[0];
-    return `https://github.com/${owner}/${repo}`;
+    return {
+      owner: hostname.split(".")[0],
+      repo: pathParts[0],
+      base: `https://github.com/${hostname.split(".")[0]}/${pathParts[0]}`,
+    };
   }
-  return "";
+
+  return {
+    owner: "OWNER",
+    repo: "REPO",
+    base: "",
+  };
+}
+
+function getGithubRepoBase() {
+  return getRepoContext().base;
 }
 
 function repoLinks() {
   const base = getGithubRepoBase();
   return [
-    { label: "Repository README", href: base ? `${base}/blob/main/README.md` : "#" },
-    { label: "Deployment Preparation Doc", href: base ? `${base}/blob/main/docs/deployment-preparation.md` : "#" },
-    { label: "Deployment Automation Doc", href: base ? `${base}/blob/main/docs/deployment-automation.md` : "#" },
-    { label: "Security Baseline", href: base ? `${base}/blob/main/docs/security-baseline.md` : "#" },
+    { label: "Repository Home", href: base || "#" },
+    { label: "Actions", href: base ? `${base}/actions` : "#" },
+    { label: "Environment Settings", href: base ? `${base}/settings/environments` : "#" },
+    { label: "Actions Secrets", href: base ? `${base}/settings/secrets/actions` : "#" },
   ];
 }
 
@@ -186,6 +202,87 @@ function workflowInputs() {
   ];
 }
 
+function oidcSubject() {
+  const context = getRepoContext();
+  return `repo:${context.owner}/${context.repo}:environment:production`;
+}
+
+function oidcSetupSteps() {
+  const context = getRepoContext();
+  return [
+    {
+      title: "Create the Azure deployment app",
+      body:
+        "In Microsoft Entra admin center, open App registrations, create a new single-tenant app such as `AOIFMSP GitHub Deploy`, and keep the Overview page open.",
+    },
+    {
+      title: "Capture the IDs you will need",
+      body:
+        "From the app registration Overview page, copy Application (client) ID and Directory (tenant) ID. These become `AZURE_CLIENT_ID` and `AZURE_TENANT_ID`.",
+    },
+    {
+      title: "Find the Enterprise Application object",
+      body:
+        "Open Enterprise applications, find the same app by name, and copy its Object ID. This is the service principal object and becomes `AZURE_PRINCIPAL_OBJECT_ID`.",
+    },
+    {
+      title: "Add the federated credential",
+      body:
+        `In the app registration, open Certificates & secrets, then Federated credentials, then Add credential. Choose GitHub Actions as the scenario, repository ${context.owner}/${context.repo}, entity type Environment, and environment name production. This creates the subject ${oidcSubject()}.`,
+    },
+    {
+      title: "Grant Azure RBAC",
+      body:
+        "On the target subscription or deployment scope, assign the deployment identity Contributor and User Access Administrator so the workflow can create resources and role assignments.",
+    },
+    {
+      title: "Grant Microsoft Graph application permissions",
+      body:
+        "In API permissions, add Microsoft Graph application permissions `Group.ReadWrite.All` and `User.Read.All`, then grant admin consent. These are required for AOIFMSP Admins bootstrap.",
+    },
+    {
+      title: "Create the GitHub environment",
+      body:
+        "In the GitHub repo, open Settings, Environments, create an environment named `production`, and allow the deploy workflow to use it.",
+    },
+    {
+      title: "Add GitHub secrets",
+      body:
+        "Add `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, and preferably `AZURE_PRINCIPAL_OBJECT_ID` to the repository or `production` environment secrets.",
+    },
+    {
+      title: "Run the docs site, then deploy",
+      body:
+        "Publish the docs site if needed, use the deployment wizard to prepare inputs, then run `Deploy Platform` from Actions.",
+    },
+  ];
+}
+
+function troubleshootingCards() {
+  return [
+    {
+      title: "AADSTS70025",
+      body:
+        "The app registration exists, but no federated credential matches the workflow subject. For this repo, create a federated credential for the GitHub Actions environment `production` or the login step will fail before Azure deployment starts.",
+    },
+    {
+      title: "Wrong subject type",
+      body:
+        "If you created a branch-based credential like `repo:OWNER/REPO:ref:refs/heads/master`, it will not match this workflow because `Deploy Platform` runs in the GitHub environment named `production`.",
+    },
+    {
+      title: "Wrong repository or fork",
+      body:
+        "Federated credentials are repository-specific. If you forked the repo, the owner/repo in the credential must match the fork, not the upstream project.",
+    },
+    {
+      title: "Azure login works but group bootstrap fails",
+      body:
+        "That usually means Azure RBAC is correct but Graph permissions or admin consent are missing. Check `Group.ReadWrite.All`, `User.Read.All`, and admin consent on the deployment app.",
+    },
+  ];
+}
+
 function helpIcon(text) {
   return `<span class="docs-help" tabindex="0" data-tooltip="${escapeHtml(text)}">?</span>`;
 }
@@ -213,6 +310,16 @@ function secretCard(name, source, note) {
       <h3>${name}</h3>
       <p><strong>Where it comes from:</strong> ${source}</p>
       <p>${note}</p>
+    </article>
+  `;
+}
+
+function stepCard(index, step) {
+  return `
+    <article class="docs-card docs-card--tight">
+      <p class="eyebrow">Step ${index}</p>
+      <h3>${step.title}</h3>
+      <p>${step.body}</p>
     </article>
   `;
 }
@@ -252,6 +359,11 @@ function renderPrepare() {
         <h2>Preparation checklist</h2>
         <p>The cleanest first deployment comes from treating Azure, GitHub, and operator readiness as one preflight step instead of learning them mid-run.</p>
       </div>
+      <article class="docs-card docs-card--accent">
+        <p class="eyebrow">Common First Blocker</p>
+        <h3>AADSTS70025 means Azure does not trust this repo yet</h3>
+        <p>If you see AADSTS70025, stop and complete the OIDC Setup page in this guide. It means the app registration exists but does not yet have the federated credential that matches this repository and workflow.</p>
+      </article>
       <div class="docs-card-grid docs-card-grid--checklist">
         ${checklistCard("MSP Tenant", [
           "Choose the MSP Microsoft 365 tenant that will host AOIFMSP.",
@@ -266,6 +378,7 @@ function renderPrepare() {
         ${checklistCard("GitHub", [
           "Use an MSP-owned clone or fork of the repository.",
           "Enable GitHub Actions.",
+          "Set GitHub Pages to use GitHub Actions if you want the docs site published from the fork.",
           "Prepare repository or environment secrets for Azure OIDC deployment.",
         ])}
         ${checklistCard("Branding", [
@@ -285,10 +398,53 @@ function renderPrepare() {
         </div>
       </article>
       <div class="docs-card-grid docs-card-grid--checklist">
-        ${secretCard("AZURE_CLIENT_ID", "The client/application ID of the Microsoft Entra app or service principal used by GitHub OIDC to deploy AOIFMSP.", "Create or identify the deployment app registration first, then copy its Application (client) ID from Microsoft Entra or Azure portal.")}
-        ${secretCard("AZURE_TENANT_ID", "The Microsoft Entra tenant ID for the tenant that owns the deployment identity and Azure subscription.", "This is usually the MSP's primary tenant ID and is visible in Microsoft Entra overview or Azure portal subscription context.")}
+        ${secretCard("AZURE_CLIENT_ID", "The Application (client) ID from the App registration used for GitHub OIDC deployment.", "Create or identify the deployment app registration first, then copy its Application (client) ID from Microsoft Entra App registrations.")}
+        ${secretCard("AZURE_TENANT_ID", "The Directory (tenant) ID for the tenant that owns the deployment identity and Azure subscription.", "This is usually the MSP tenant ID and is visible in Microsoft Entra overview or Azure portal subscription context.")}
         ${secretCard("AZURE_SUBSCRIPTION_ID", "The Azure subscription that will host the AOIFMSP resources.", "Copy this from the target subscription in Azure portal or `az account show`.")}
-        ${secretCard("AZURE_PRINCIPAL_OBJECT_ID", "The object ID of the deployment service principal in Microsoft Entra. This is optional but recommended.", "Use it when you want deployment RBAC assignment to be deterministic without relying on runtime lookup inside the workflow.")}
+        ${secretCard("AZURE_PRINCIPAL_OBJECT_ID", "The Object ID of the Enterprise Application / service principal for the deployment app.", "Find the matching Enterprise application in Microsoft Entra and copy its Object ID. This is optional but recommended because it makes RBAC assignment more deterministic.")}
+      </div>
+    </section>
+  `;
+}
+
+function renderOidc() {
+  const context = getRepoContext();
+  return `
+    <section class="docs-scene__section">
+      <div class="docs-section-heading">
+        <p class="eyebrow">GitHub OIDC Setup</p>
+        <h2>Step-by-step Azure trust for this repo</h2>
+        <p>This repo is designed to deploy with GitHub OIDC. The deploy workflow uses the GitHub environment named <code>production</code>, so the Azure app must trust the subject shown below.</p>
+      </div>
+      <div class="docs-split">
+        <article class="docs-card docs-card--accent">
+          <p class="eyebrow">Exact Subject</p>
+          <h3>${escapeHtml(oidcSubject())}</h3>
+          <p>Create a federated credential for repository <strong>${escapeHtml(context.owner)}/${escapeHtml(context.repo)}</strong>, entity type <strong>Environment</strong>, and environment name <strong>production</strong>.</p>
+        </article>
+        <article class="docs-card">
+          <p class="eyebrow">Why AADSTS70025 Happens</p>
+          <h3>Azure cannot match the workflow identity</h3>
+          <p>If the federated credential is missing, points to the wrong repository, or trusts a branch subject instead of the <code>production</code> environment subject, <code>azure/login</code> fails with AADSTS70025.</p>
+        </article>
+      </div>
+      <div class="docs-card-grid docs-card-grid--checklist">
+        ${oidcSetupSteps().map((step, index) => stepCard(index + 1, step)).join("")}
+      </div>
+      <article class="docs-card">
+        <p class="eyebrow">Federated Credential Values</p>
+        <div class="docs-kv-list">
+          <div class="docs-kv"><strong>Issuer</strong><span>https://token.actions.githubusercontent.com</span></div>
+          <div class="docs-kv"><strong>Audience</strong><span>api://AzureADTokenExchange</span></div>
+          <div class="docs-kv"><strong>Organization / Owner</strong><span>${escapeHtml(context.owner)}</span></div>
+          <div class="docs-kv"><strong>Repository</strong><span>${escapeHtml(context.repo)}</span></div>
+          <div class="docs-kv"><strong>Entity type</strong><span>Environment</span></div>
+          <div class="docs-kv"><strong>Environment</strong><span>production</span></div>
+          <div class="docs-kv"><strong>Subject</strong><span>${escapeHtml(oidcSubject())}</span></div>
+        </div>
+      </article>
+      <div class="docs-card-grid docs-card-grid--checklist">
+        ${troubleshootingCards().map((item) => `<article class="docs-card docs-card--tight"><p class="eyebrow">Troubleshooting</p><h3>${item.title}</h3><p>${item.body}</p></article>`).join("")}
       </div>
     </section>
   `;
@@ -326,7 +482,7 @@ function renderDeploy() {
       <div class="docs-section-heading">
         <p class="eyebrow">Guided Deployment</p>
         <h2>Workflow input wizard</h2>
-        <p>Use this to prepare the values for the GitHub Actions <code>Deploy Platform</code> workflow before you start the run.</p>
+        <p>Use this after OIDC is already configured. If Azure login is still failing, complete the OIDC Setup page before returning here.</p>
       </div>
       <div class="docs-wizard">
         <div class="docs-wizard__form">
@@ -378,6 +534,7 @@ function renderDeploy() {
           <article class="docs-card">
             <p class="eyebrow">Run Order</p>
             <ol class="docs-steps">
+              <li>Complete the OIDC setup and confirm the federated credential subject matches <code>${escapeHtml(oidcSubject())}</code>.</li>
               <li>Set the Azure OIDC secrets in GitHub.</li>
               <li>Commit logo assets into the repo if you want them applied on first load.</li>
               <li>Run <code>Deploy Platform</code> and paste the workflow input values from this wizard.</li>
@@ -494,6 +651,9 @@ function render(preserveFocus = false) {
     case "prepare":
       scene.innerHTML = renderPrepare();
       break;
+    case "oidc":
+      scene.innerHTML = renderOidc();
+      break;
     case "deploy":
       scene.innerHTML = renderDeploy();
       break;
@@ -558,7 +718,7 @@ function wireInteractions() {
 }
 
 function escapeHtml(value) {
-  return value
+  return String(value)
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")

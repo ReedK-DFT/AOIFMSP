@@ -60,11 +60,14 @@ Prepare:
 Prepare a deployment identity with:
 
 - GitHub OIDC trust configured for the repo
+- a federated credential that trusts the GitHub environment named `production`
 - `Contributor` on the target scope
 - `User Access Administrator` or equivalent on the target scope
 - Microsoft Graph application permissions for admin-group bootstrap:
   - `Group.ReadWrite.All`
   - `User.Read.All`
+
+If you see `AADSTS70025`, the app registration exists but the federated credential is missing or does not match the workflow subject. Follow [github-oidc-setup.md](./github-oidc-setup.md) before retrying the deployment.
 
 ### Branding inputs
 
@@ -90,12 +93,19 @@ Before import work begins, decide:
 
 ## Required GitHub Secrets
 
-Set these in the repository or environment:
+Set these in the repository or `production` environment:
 
 - `AZURE_CLIENT_ID`
 - `AZURE_TENANT_ID`
 - `AZURE_SUBSCRIPTION_ID`
 - optionally `AZURE_PRINCIPAL_OBJECT_ID`
+
+Where they come from:
+
+- `AZURE_CLIENT_ID` is the Application (client) ID from the Microsoft Entra App registration used for deployment
+- `AZURE_TENANT_ID` is the Directory (tenant) ID for the MSP tenant
+- `AZURE_SUBSCRIPTION_ID` is the Azure subscription ID that will host AOIFMSP
+- `AZURE_PRINCIPAL_OBJECT_ID` is the Object ID of the matching Enterprise application / service principal
 
 ## Required Deployment Workflow Inputs
 
@@ -124,11 +134,12 @@ If neither bootstrap admin field is supplied, the workflow fails intentionally.
 For most MSPs, the best first run is:
 
 1. Deploy a `test` environment first.
-2. Keep Storage and Function App public network access enabled for that first test unless private networking is already prepared.
-3. Use one known-good AOIFMSP admin identity.
-4. Apply branding during the initial deployment so the team can validate the hosted shell in realistic form.
-5. Import core PSA, RMM, documentation, and Graph-adjacent connectors after deployment.
-6. Review normalized action mappings before exposing imported actions broadly to technicians.
+2. Complete the OIDC setup in [github-oidc-setup.md](./github-oidc-setup.md) before opening `Deploy Platform`.
+3. Keep Storage and Function App public network access enabled for that first test unless private networking is already prepared.
+4. Use one known-good AOIFMSP admin identity.
+5. Apply branding during the initial deployment so the team can validate the hosted shell in realistic form.
+6. Import core PSA, RMM, documentation, and Graph-adjacent connectors after deployment.
+7. Review normalized action mappings before exposing imported actions broadly to technicians.
 
 ## After Deployment
 
@@ -144,6 +155,7 @@ Once the workflow completes:
 ## Related Docs
 
 - [README.md](../README.md)
+- [github-oidc-setup.md](./github-oidc-setup.md)
 - [deployment-automation.md](./deployment-automation.md)
 - [security-baseline.md](./security-baseline.md)
 - [security-readiness-checklist.md](./security-readiness-checklist.md)
