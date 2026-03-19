@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1400" height="320" viewBox="0 0 1400 320" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Dragonfly Technologies wordmark</title>
+  <desc id="desc">A clean SVG branding wordmark featuring the text Dragonfly Technologies and a stylized dragonfly icon.</desc>
+
+  <defs>
+    <style>
+      .brand-orange { fill: #E04826; }
+      .brand-gray { fill: #58585A; }
+      .stroke-gray { stroke: #58585A; }
+      .stroke-light { stroke: #C9CFD7; }
+      .wordmark-heavy {
+        font-family: "Arial Black", "Montserrat", "Avenir Next", Arial, Helvetica, sans-serif;
+        font-weight: 900;
+        letter-spacing: 1.5px;
+      }
+      .wordmark-mid {
+        font-family: "Montserrat", "Avenir Next", Arial, Helvetica, sans-serif;
+        font-weight: 700;
+        letter-spacing: 6px;
+      }
+    </style>
+  </defs>
+
+  <!-- Wordmark -->
+  <g transform="translate(70 62)">
+    <text x="0" y="92" class="brand-orange wordmark-heavy" font-size="86">DRAGONFLY</text>
+    <text x="3" y="150" class="brand-gray wordmark-mid" font-size="40">TECHNOLOGIES</text>
+  </g>
+
+  <!-- Dragonfly icon -->
+  <g transform="translate(1085 42)">
+    <!-- rear wings -->
+    <path d="M69 118
+             C42 93, 16 80, 1 84
+             C17 93, 39 114, 57 134
+             C73 152, 86 170, 92 186
+             C89 170, 82 147, 69 118Z"
+          fill="white" stroke="#58585A" stroke-width="6" stroke-linejoin="round"/>
+    <path d="M79 116
+             C105 92, 132 80, 147 84
+             C132 93, 109 114, 91 134
+             C76 152, 62 170, 56 186
+             C59 170, 66 147, 79 116Z"
+          fill="white" stroke="#58585A" stroke-width="6" stroke-linejoin="round"/>
+
+    <!-- front wings -->
+    <path d="M69 111
+             C38 75, 2 55, -20 63
+             C4 74, 34 97, 59 123
+             C81 147, 96 173, 103 197
+             C99 168, 91 138, 69 111Z"
+          fill="white" stroke="#58585A" stroke-width="6" stroke-linejoin="round"/>
+    <path d="M79 111
+             C110 75, 146 55, 168 63
+             C144 74, 114 97, 89 123
+             C67 147, 52 173, 45 197
+             C49 168, 57 138, 79 111Z"
+          fill="white" stroke="#58585A" stroke-width="6" stroke-linejoin="round"/>
+
+    <!-- wing veins -->
+    <g class="stroke-light" stroke-width="2.2" stroke-linecap="round" opacity="0.9">
+      <path d="M63 119 C41 104, 19 93, -1 90"/>
+      <path d="M62 128 C36 120, 16 115, 2 110"/>
+      <path d="M61 138 C39 138, 18 141, 4 146"/>
+      <path d="M84 119 C106 104, 128 93, 148 90"/>
+      <path d="M85 128 C111 120, 131 115, 145 110"/>
+      <path d="M86 138 C108 138, 129 141, 143 146"/>
+
+      <path d="M58 106 C26 91, -3 79, -16 71"/>
+      <path d="M56 116 C26 107, 4 102, -11 99"/>
+      <path d="M55 126 C28 127, 6 130, -7 137"/>
+      <path d="M90 106 C122 91, 151 79, 164 71"/>
+      <path d="M92 116 C122 107, 144 102, 159 99"/>
+      <path d="M93 126 C120 127, 142 130, 155 137"/>
+    </g>
+
+    <!-- body -->
+    <ellipse cx="74" cy="48" rx="15" ry="17" fill="#1E1E1F"/>
+    <ellipse cx="74" cy="77" rx="10" ry="19" fill="#1E1E1F"/>
+    <rect x="68" y="93" width="12" height="86" rx="6" fill="#1E1E1F"/>
+    <path d="M74 177 L74 250" stroke="#1E1E1F" stroke-width="7" stroke-linecap="round"/>
+    <path d="M74 250 L66 274" stroke="#1E1E1F" stroke-width="4.5" stroke-linecap="round"/>
+    <path d="M74 250 L82 274" stroke="#1E1E1F" stroke-width="4.5" stroke-linecap="round"/>
+
+    <!-- antennae -->
+    <path d="M68 34 C59 20, 51 11, 41 5" stroke="#1E1E1F" stroke-width="3.5" stroke-linecap="round"/>
+    <path d="M80 34 C89 20, 97 11, 107 5" stroke="#1E1E1F" stroke-width="3.5" stroke-linecap="round"/>
+
+    <!-- legs -->
+    <g stroke="#1E1E1F" stroke-width="4" stroke-linecap="round">
+      <path d="M70 105 L31 136"/>
+      <path d="M78 105 L116 136"/>
+      <path d="M70 122 L38 162"/>
+      <path d="M78 122 L110 162"/>
+      <path d="M70 139 L46 184"/>
+      <path d="M78 139 L102 184"/>
+    </g>
+  </g>
+</svg>
